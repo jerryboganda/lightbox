@@ -1,0 +1,20 @@
+---
+import App from '../../layouts/App.astro';
+import QuizBuilder from '../../components/islands/QuizBuilder';
+import { mine, pool } from '../../server/exams';
+import { SYSTEMS, systemOrder } from '../../lib/data';
+import { PAPERS } from '../../lib/quiz';
+import '../../styles/practice.css';
+
+const mode = Astro.url.searchParams.get('mode') === 'exam' ? 'exam' : 'quiz';
+const systems = [...systemOrder, 'other'].filter((s) => pool.some((p) => p.system === s)).map((s) => [s, SYSTEMS[s].label] as [string, string]);
+---
+<App title="Quiz builder" crumbs={[{ label: 'Practice', href: '/practice' }]}>
+  <header class="reveal" style="--i:0">
+    <h1 class="text-2xl font-medium">{mode === 'exam' ? 'Timed exam' : 'Build a quiz'}</h1>
+    <p class="mt-1 max-w-2xl text-muted">Pick a ready-made set, or filter the {pool.length} past-paper questions by paper, system, key status and your own history.</p>
+  </header>
+  <div class="mt-6">
+    <QuizBuilder client:load pool={pool} mine={mine(Astro.locals.user!.id)} papers={Object.entries(PAPERS)} systems={systems} mode={mode} />
+  </div>
+</App>

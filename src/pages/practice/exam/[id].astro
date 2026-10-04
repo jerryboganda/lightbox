@@ -1,0 +1,184 @@
+---
+import App from '../../../layouts/App.astro';
+import Icon from '../../../components/Icon.astro';
+import ScoreRing from '../../../components/ScoreRing.astro';
+import ExamPlayer, { type Ans } from '../../../components/islands/ExamPlayer';
+import { answersOf, configOf, deadlineOf, itemsOf, load, playerItems, results } from '../../../server/exams';
+import { SYSTEMS } from '../../../lib/data';
+import { clock, dur, host, PAPERS, urls, verdictBadge, when } from '../../../lib/quiz';
+import '../../../styles/practice.css';
+
+const e = load(Astro.locals.user!.id, Number(Astro.params.id));
+if (!e) return Astro.redirect('/practice');
+if (e.mode === 'toacs') return Astro.redirect(`/practice/toacs/${e.id}`);
+const practice = e.mode === 'quiz';
+const error = Astro.url.searchParams.get('error')?.slice(0, 120);
+
+let player: Parameters<typeof ExamPlayer>[0] | null = null;
+let r: ReturnType<typeof results> | null = null;
+if (!e.finished_at) {
+  const answers: Record<string, Ans> = {};
+  for (const [k, a] of answersOf(e.id)) answers[k] = { choice: a.choice, flagged: !!a.flagged, correct: a.correct };
+  player = { id: e.id, mode: practice ? 'quiz' : 'exam', title: e.title, items: playerItems(e), answers, pos: configOf(e).pos ?? 0, deadline: deadlineOf(e), startedAt: e.started_at, serverNow: Date.now() };
+} else r = results(e);
+
+const shuffled = itemsOf(e).some((i) => i.o);
+const bars = r ? [['By paper', r.byPaper.map((g) => ({ ...g, label: PAPERS[g.key] ?? g.key }))], ['By system, inferred', r.bySystem.map((g) => ({ ...g, label: SYSTEMS[g.key]?.label ?? g.key }))]] as const : [];
+const filters = r ? [['all', 'All', r.rows.length], ['wrong', 'Wrong', r.wrong], ['flagged', 'Flagged', r.flagged], ['unanswered', 'Unanswered', r.unanswered], ['disputed', 'Disputed', r.disputed]] as const : [];
+---
+<App title={e.title} crumbs={[{ label: 'Practice', href: '/practice' }]} wide={!r}>
+  {player ? (
+    <>
+      <header class="reveal mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-1" style="--i:0">
+        <div class="min-w-0">
+          <h1 class="text-xl font-medium sm:text-2xl">{e.title}</h1>
+          <p class="mt-1 text-sm text-muted">{practice ? 'Practice: check each answer for instant feedback and evidence.' : 'Exam: answers save as you go. Feedback and the key come after you submit.'}</p>
+        </div>
+      </header>
+      <ExamPlayer client:load {...player} />
+    </>
+  ) : r && (
+    <>
+      {error && <p class="reveal mb-4 flex items-center gap-2 rounded-xl border border-signal/30 bg-signal/10 px-4 py-3 text-sm" role="alert"><Icon name="Info" size={16} class="text-signal" />{error}</p>}
+      <header class="reveal flex flex-wrap items-end justify-between gap-4" style="--i:0">
+        <div class="min-w-0">
+          <p class="flex items-center gap-2 text-xs text-muted"><span class={`badge ${practice ? 's-agreed' : 's-unchecked'}`}>{practice ? 'Practice' : 'Exam'}</span>Finished {when(e.finished_at!)}</p>
+          <h1 class="mt-2 text-2xl font-medium">{e.title}</h1>
+          <p class="mt-1 text-muted">{r.keyed ? <>Scored on the <span class="num">{r.keyed}</span> question{r.keyed === 1 ? ' that has' : 's that have'} an answer key</> : 'No question here has an answer key, so nothing is scored'}{r.unscored > 0 && r.keyed > 0 && <>; <span class="num">{r.unscored}</span> without a key {r.unscored === 1 ? 'is' : 'are'} practice only</>}.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <form method="post" action={`/api/exams/${e.id}/retake`}><button class="btn btn-primary" disabled={r.keyed - r.right === 0}><Icon name="RotateCcw" size={16} />Retake wrong ones{r.keyed - r.right > 0 && <span class="num opacity-80">{r.keyed - r.right}</span>}</button></form>
+          <a href="/practice/builder" class="btn"><Icon name="SlidersHorizontal" size={16} />New quiz</a>
+        </div>
+      </header>
+
+      <div class="rbento mt-6">
+        <section class="panel tile r-score reveal" style="--i:1" aria-labelledby="h-score">
+          <h2 id="h-score" class="sr-only">Score</h2>
+          <ScoreRing value={r.right} total={r.keyed} label="Score" />
+          <dl class="grid flex-1 grid-cols-2 gap-x-6 gap-y-4 text-sm">
+            <div><dt class="text-muted">Correct</dt><dd class="num mt-0.5 text-2xl text-ok" data-count={r.right}>{r.right}</dd></div>
+            <div><dt class="text-muted">Wrong</dt><dd class="num mt-0.5 text-2xl text-bad" data-count={r.wrong}>{r.wrong}</dd></div>
+            <div><dt class="text-muted">Unanswered</dt><dd class="num mt-0.5 text-2xl">{r.unanswered}</dd></div>
+            <div><dt class="text-muted">Unscored</dt><dd class="num mt-0.5 text-2xl text-muted">{r.unscored}</dd></div>
+          </dl>
+        </section>
+        <section class="panel tile r-time reveal" style="--i:2" aria-labelledby="h-time">
+          <h2 id="h-time" class="tile-h">Time</h2>
+          <dl class="mt-3 grid grid-cols-2 gap-4 text-sm">
+            <div><dt class="text-muted">Used</dt><dd class="num mt-0.5 text-2xl">{clock(r.timeUsed / 1000)}</dd>{e.time_limit && <dd class="num text-xs text-faint">of {clock(e.time_limit)}</dd>}</div>
+            <div><dt class="text-muted">Per answer</dt><dd class="num mt-0.5 text-2xl">{r.answered ? dur(r.avgMs) : '–'}</dd><dd class="text-xs text-faint">average</dd></div>
+          </dl>
+          <p class="mt-4 flex items-center gap-2 text-xs text-muted"><Icon name="Flag" size={14} class="text-signal" /><span class="num">{r.flagged}</span> flagged for review</p>
+        </section>
+        {bars.map(([label, groups], k) => (
+          <section class="panel tile r-bars reveal" style={`--i:${3 + k}`} aria-labelledby={`h-b${k}`}>
+            <h2 id={`h-b${k}`} class="tile-h">{label}</h2>
+            <ul class="mt-3 space-y-2.5">
+              {groups.map((g, j) => (
+                <li class="text-sm">
+                  <div class="flex items-baseline justify-between gap-3"><span class="truncate">{g.label}</span><span class="num shrink-0 text-xs text-muted">{g.keyed ? `${g.right}/${g.keyed} correct` : 'unscored'}{g.n > g.keyed && g.keyed ? ` · ${g.n - g.keyed} unscored` : ''}</span></div>
+                  <span class="meter mt-1.5" aria-hidden="true"><span style={`--w:${g.keyed ? g.right / g.keyed : 0};--i:${j}`}></span></span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      <section class="mt-10" aria-labelledby="h-review">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="h-review" class="text-lg font-medium">Review</h2>
+          <div class="flex flex-wrap gap-1.5" role="group" aria-label="Show" data-rfilter>
+            {filters.map(([k, label, n]) => <button type="button" class="chip" aria-pressed={k === 'all' ? 'true' : 'false'} data-f={k} disabled={n === 0 && k !== 'all'}>{label}<span class="num text-muted">{n}</span></button>)}
+          </div>
+        </div>
+        {shuffled && <p class="mt-2 text-xs text-muted">Options were shuffled during the session; here they are in paper order, with paper letters.</p>}
+        <p class="sr-only" aria-live="polite" data-rcount></p>
+        <ol class="mt-4 space-y-3" data-rlist>
+          {r.rows.map((x) => {
+            const m = x.m;
+            const tags = [x.correct === 0 && 'wrong', x.flagged && 'flagged', !x.choice && 'unanswered', x.disputed && 'disputed'].filter(Boolean).join(' ');
+            const status = !x.keyed ? ['s-neutral', 'Unscored'] : !x.choice ? ['s-neutral', 'Unanswered'] : x.correct ? ['s-cited', 'Correct'] : ['s-disputed', 'Wrong'];
+            const opt = (l: string) => m.key && l === m.key ? 'right' : x.choice === l && m.key ? 'wrong' : x.choice === l ? 'picked' : !m.key && l === m.myAnswer ? 'model' : 'idle';
+            const links = urls(m.evidence), vb = verdictBadge(m.verdict, m.key);
+            return (
+              <li class="panel ritem p-4 sm:p-5" data-tags={tags} id={`q${x.n}`}>
+                <div class="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span class="num text-ink">{x.n}.</span><span>{PAPERS[m.paper] ?? m.paper}</span><span class="num text-faint">{m.qid.split('-')[1]}</span>
+                  <span class={`badge ${status[0]}`}>{status[1]}</span>
+                  {vb && <span class={`badge ${vb[0]}`}>{vb[1]}</span>}
+                  {x.flagged && <span class="badge s-unchecked">Flagged</span>}
+                  {x.ms > 0 && <span class="num ml-auto text-muted" title="Time on this question">{dur(x.ms)}</span>}
+                </div>
+                <p class="mt-2 leading-relaxed">{m.stem}</p>
+                <p class="mt-2 text-sm text-muted">Your answer: <span class="num text-ink">{x.choice ?? '–'}</span>{m.key ? <> · Key: <span class="num text-ink">{m.key}</span></> : <> · No key in the source</>}</p>
+                <details class="rdet mt-3">
+                  <summary class="inline-flex cursor-pointer items-center gap-1.5 text-sm text-accent"><Icon name="ChevronRight" size={15} class="rchev" />Options and evidence</summary>
+                  <div class="mt-3 grid gap-2">
+                    {Object.entries(m.options).map(([l, t]) => (
+                      <div class={`opt opt-${opt(l)} !py-2.5 text-[0.9rem]`}><span class="opt-key num">{l}</span><span class="flex-1">{t}</span>{opt(l) === 'right' && <Icon name="Check" size={17} class="shrink-0 text-ok" />}{opt(l) === 'wrong' && <Icon name="X" size={17} class="shrink-0 text-bad" />}{opt(l) === 'model' && <span class="text-[11px] text-muted">Lightbox, unverified</span>}</div>
+                    ))}
+                  </div>
+                  <div class="mt-3 space-y-2.5 rounded-xl border border-line bg-sunk p-4 text-sm">
+                    {x.disputed && <p class="flex gap-2 text-ink"><Icon name="CircleAlert" size={16} class="mt-0.5 shrink-0 text-bad" /><span>Disputed. {m.key ? `The paper says ${m.key}` : 'The paper gives no usable key'}{m.myAnswer ? `; answered blind, Lightbox chose ${m.myAnswer}` : ''}. Both positions are kept.</span></p>}
+                    {m.keyEvidence && <p class="text-muted"><span class="text-faint">Answer line in the source: </span>{m.keyEvidence}</p>}
+                    {!m.key && m.myAnswer && <p class="text-muted"><span class="text-ink">Lightbox's blind answer, unverified: {m.myAnswer}</span>{m.confidence && ` (${m.confidence} confidence)`}. {m.reason}</p>}
+                    {m.key && m.myAnswer && m.myAnswer !== m.key && !x.disputed && <p class="text-muted">Answered blind, Lightbox chose {m.myAnswer}. {m.reason}</p>}
+                    {m.note && <p class="text-muted">{m.note}</p>}
+                    {links.length > 0 && <div class="flex flex-wrap gap-2">{links.map((u) => <a href={u} target="_blank" rel="noopener noreferrer" class="chip"><Icon name="ExternalLink" size={13} />{host(u)}</a>)}</div>}
+                    {m.notBlind && <p class="text-xs text-muted">{m.notBlindReason}</p>}
+                    {!m.keyEvidence && !m.myAnswer && !m.note && !links.length && !m.notBlind && <p class="text-muted">No further evidence recorded for this question.</p>}
+                    <a href={`/practice/mcq?q=${m.qid}`} class="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">Open in the MCQ bank<Icon name="ArrowUpRight" size={13} /></a>
+                  </div>
+                </details>
+              </li>
+            );
+          })}
+        </ol>
+        <p class="panel mt-4 hidden px-5 py-8 text-center text-sm text-muted" data-rempty>Nothing in this view.</p>
+      </section>
+    </>
+  )}
+</App>
+
+<script>
+  import { countUp } from '../../../scripts/motion';
+  function init() {
+    const bar = document.querySelector('[data-rfilter]');
+    if (!bar) return;
+    countUp();
+    const items = [...document.querySelectorAll<HTMLElement>('[data-rlist] > li')];
+    const count = document.querySelector('[data-rcount]')!, empty = document.querySelector('[data-rempty]')!;
+    bar.querySelectorAll<HTMLButtonElement>('[data-f]').forEach((b) => b.addEventListener('click', () => {
+      bar.querySelectorAll('[data-f]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      const f = b.dataset.f!;
+      let n = 0;
+      for (const li of items) { const on = f === 'all' || li.dataset.tags!.split(' ').includes(f); li.hidden = !on; if (on) n++; }
+      empty.classList.toggle('hidden', n > 0);
+      count.textContent = `Showing ${n} of ${items.length} questions`;
+    }));
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .rbento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; }
+  .tile { padding: 1.25rem 1.35rem; }
+  .tile-h { font-size: 0.95rem; font-weight: 500; }
+  .r-score { grid-column: span 7; display: flex; align-items: center; gap: 2rem; }
+  .r-time { grid-column: span 5; }
+  .r-bars { grid-column: span 5; align-self: start; }
+  .r-bars + .r-bars { grid-column: span 7; }
+  .meter { position: relative; display: block; height: 0.375rem; border-radius: 99px; background: var(--sunk); overflow: hidden; }
+  .meter span { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--w)); border-radius: 99px; background: var(--accent); animation: growx var(--d4) var(--ease) both; animation-delay: calc(var(--i) * 40ms + 250ms); }
+  @keyframes growx { from { transform: scaleX(0); } }
+  .rdet[open] .rchev { transform: rotate(90deg); }
+  .rchev { transition: transform var(--d2) var(--ease); }
+  .ritem { scroll-margin-top: 5rem; }
+  @media (max-width: 1023px) { .r-score, .r-time, .r-bars, .r-bars + .r-bars { grid-column: span 12; } }
+  @media (max-width: 520px) { .r-score { flex-direction: column; align-items: stretch; gap: 1.25rem; } .r-score :global(.score) { align-self: center; } }
+  @media (prefers-reduced-motion: reduce) { .meter span { animation: none; } }
+  :global([data-motion="reduced"]) .meter span { animation: none; }
+</style>

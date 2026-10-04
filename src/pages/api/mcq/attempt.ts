@@ -3,8 +3,8 @@ import { recordAttempt } from '../../../server/progress';
 import { db } from '../../../server/db';
 
 export const POST: APIRoute = async ({ request, locals }) => {
-  const { qid, choice } = await request.json().catch(() => ({}));
-  const r = recordAttempt(locals.user!.id, String(qid || ''), String(choice || ''));
+  const { qid, choice, ms } = await request.json().catch(() => ({}));
+  const r = recordAttempt(locals.user!.id, String(qid || '').slice(0, 40), String(choice || '').slice(0, 4), typeof ms === 'number' ? ms : null, 'bank');
   return r ? Response.json(r) : Response.json({ error: 'Unknown question or option.' }, { status: 400 });
 };
 

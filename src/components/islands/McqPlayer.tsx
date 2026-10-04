@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, CircleAlert, ExternalLink, Info, RotateCcw, Shuffle, X } from 'lucide-react';
+import { host, PAPERS, urls, verdictBadge } from '../../lib/quiz';
 
 type Mcq = { qid: string; paper: string; stem: string; options: Record<string, string>; key: string; keyEvidence: string; myAnswer: string; confidence: string; reason: string; verdict: string; evidence: string; note: string; notBlind: boolean; notBlindReason: string; file: string; unit: number };
 type Attempt = { qid: string; choice: string; correct: number | null };
-const PAPERS: Record<string, string> = { FEB2025: 'IMM Feb 2025', AUG2025: 'IMM Aug 2025' };
 const SETS = [['all', 'All'], ['keyed', 'With answer key'], ['disputed', 'Disputed'], ['unanswered', 'Not answered yet'], ['wrong', 'Got wrong']] as const;
-const VERDICT: Record<string, [string, string]> = { 'KEY CORRECT': ['s-cited', 'Key checked'], DISPUTED: ['s-disputed', 'Disputed key'], 'NO KEY': ['s-neutral', 'No key in source'], 'KEY WRONG': ['s-disputed', 'Key overruled'] };
-const urls = (s: string) => (s.match(/https?:\/\/[^\s;,)]+/g) || []);
-const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
 
 export default function McqPlayer() {
   const [all, setAll] = useState<Mcq[] | null>(null);
@@ -22,13 +19,15 @@ export default function McqPlayer() {
   const [checked, setChecked] = useState(false);
   const [dir, setDir] = useState(1);
   const [err, setErr] = useState('');
+  const shownAt = useRef(0); // time on question, sent with the attempt
+  const want = useRef<string | null>(null);
 
   useEffect(() => {
     Promise.all([fetch('/api/data/mcqs').then((r) => r.json()), fetch('/api/mcq/attempt').then((r) => r.json())]).then(([m, h]: [Mcq[], Attempt[]]) => {
       setAll(m.filter((x) => Object.keys(x.options).length >= 2));
       setHist(new Map(h.map((a) => [a.qid, a])));
       const q = new URLSearchParams(location.search).get('q');
-      if (q) { setSet('all'); setPaper('all'); setTimeout(() => setI(Math.max(0, m.filter((x) => Object.keys(x.options).length >= 2).findIndex((x) => x.qid === q))), 0); }
+      if (q) { want.current = q; setSet('all'); setPaper('all'); }
     });
   }, []);
 
@@ -48,8 +47,13 @@ export default function McqPlayer() {
   const m = list[Math.min(i, list.length - 1)];
   const prior = m && hist.get(m.qid);
 
-  useEffect(() => { setPick(null); setChecked(false); setErr(''); }, [m?.qid]);
-  useEffect(() => { setI(0); }, [paper, set, shuffle, seed]);
+  useEffect(() => { setPick(null); setChecked(false); setErr(''); shownAt.current = performance.now(); }, [m?.qid]);
+  // ?q=<qid> deep link: open that question once the full list is in place.
+  useEffect(() => {
+    const k = want.current ? list.findIndex((x) => x.qid === want.current) : -1;
+    if (list.length) want.current = null;
+    setI(Math.max(0, k));
+  }, [all, paper, set, shuffle, seed]);
 
   const go = useCallback((d: number) => { setDir(d); setI((x) => Math.max(0, Math.min(list.length - 1, x + d))); }, [list.length]);
 
@@ -57,7 +61,7 @@ export default function McqPlayer() {
     if (!m) return;
     if (!pick) { setErr('Choose an option first.'); return; }
     setChecked(true);
-    const r = await fetch('/api/mcq/attempt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ qid: m.qid, choice: pick }) }).then((x) => x.json()).catch(() => null);
+    const r = await fetch('/api/mcq/attempt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ qid: m.qid, choice: pick, ms: Math.round(performance.now() - shownAt.current) }) }).then((x) => x.json()).catch(() => null);
     if (r && 'correct' in r) {
       setHist((h) => new Map(h).set(m.qid, { qid: m.qid, choice: pick, correct: r.correct }));
       if (r.correct === 1) navigator.vibrate?.(12); else if (r.correct === 0) navigator.vibrate?.([20, 40, 20]);
@@ -81,6 +85,7 @@ export default function McqPlayer() {
 
   if (!all) return <div className="space-y-3"><div className="skeleton h-10 w-2/3" /><div className="skeleton h-48" /></div>;
   const answered = list.filter((x) => hist.has(x.qid)).length;
+  const vb = m && verdictBadge(m.verdict, m.key);
   const optionState = (l: string) => {
     if (!checked) return pick === l ? 'picked' : '';
     if (m.key && l === m.key) return 'right';
@@ -134,7 +139,7 @@ export default function McqPlayer() {
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1], delay: 0.05 }} className="mt-6 space-y-3 rounded-xl border border-line bg-sunk p-4 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     {m.key ? (pick === m.key ? <span className="font-medium text-ok">Correct.</span> : <span className="font-medium text-bad">The key says {m.key}.</span>) : <span className="font-medium">No answer key in the source.</span>}
-                    {VERDICT[m.verdict] && <span className={`badge ${VERDICT[m.verdict][0]}`}>{VERDICT[m.verdict][1]}</span>}
+                    {vb && <span className={`badge ${vb[0]}`}>{vb[1]}</span>}
                   </div>
                   {!m.key && m.myAnswer && <p className="text-muted"><span className="text-ink">Lightbox's blind answer: {m.myAnswer}</span>{m.confidence && ` (${m.confidence} confidence)`}. {m.reason}</p>}
                   {m.key && m.myAnswer && m.myAnswer !== m.key && <p className="flex gap-2 text-muted"><CircleAlert size={16} className="mt-0.5 shrink-0 text-signal" />Answered blind, Lightbox chose {m.myAnswer}. {m.reason}</p>}
