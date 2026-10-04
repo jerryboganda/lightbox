@@ -6,7 +6,9 @@ import Icon from '../../../components/Icon.astro';
 import MarkToggle from '../../../components/MarkToggle.astro';
 import Row from '../_Row.astro';
 import Empty from '../_Empty.astro';
+import ExportMenu from '../../../components/islands/ExportMenu';
 import { ago, getCollection, intId, itemInfo, type ItemInfo } from '../../../server/personal';
+import { scopeInfo } from '../../../server/exports';
 
 const uid = Astro.locals.user!.id;
 const c = getCollection(uid, intId(Astro.params.id));
@@ -18,6 +20,7 @@ const thumb = async (file?: string) => { const src = file ? atlas.get(file) : un
 const items = c ? await Promise.all(c.items.map((it) => itemInfo(uid, it.type, it.id)).filter((x): x is ItemInfo => !!x).map(async (info) => ({ info, thumb: await thumb(info.image) }))) : [];
 const NAMES: Record<string, string> = { fact: 'fact', topic: 'topic', mcq: 'MCQ', image: 'image' };
 const mix = Object.entries(NAMES).map(([t, n]) => [items.filter((i) => i.info.type === t).length, n] as const).filter(([k]) => k).map(([k, n]) => `${k} ${n}${k === 1 ? '' : 's'}`).join(' · ');
+const deck = c && scopeInfo(uid, `collection:${c.id}`);
 const back = c && !c.owner ? { label: 'Class collections', href: '/library/shared' } : { label: 'Collections', href: '/library?tab=collections' };
 ---
 <App title={c?.name ?? 'Collection not found'} crumbs={[{ label: 'Library', href: '/library' }, back]}>
@@ -51,6 +54,7 @@ const back = c && !c.owner ? { label: 'Class collections', href: '/library/share
           ) : (
             <button type="button" class="btn btn-primary btn-sm" data-act="copy-col" data-id={c.id}><Icon name="Copy" size={15} />Copy to my collections</button>
           )}
+          {deck && <ExportMenu client:idle scopes={[deck]} trigger="Export to Anki" />}
         </div>
       </header>
 

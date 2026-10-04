@@ -1,0 +1,63 @@
+/* Export dialog (ExportMenu island). */
+dialog.ex-dialog { width: min(36rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 0; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--raised); color: var(--ink); box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.7); }
+dialog.ex-dialog[open] { display: flex; flex-direction: column; animation: rise var(--d3) var(--ease); }
+dialog.ex-dialog::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur(3px); }
+.ex-dh { flex: none; display: flex; align-items: center; gap: 0.75rem; padding: 1.1rem 1.25rem 0; }
+.ex-db { display: grid; gap: 1.1rem; padding: 1rem 1.25rem; overflow-y: auto; overscroll-behavior: contain; }
+.ex-db > * { min-width: 0; }
+.ex-db fieldset { min-inline-size: 0; }
+.ex-df { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; padding: 0.85rem 1.25rem 1.1rem; border-top: 1px solid var(--line); }
+.ex-ico { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 12px; background: var(--glow); color: var(--accent); border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent); }
+.ex-lg { margin-bottom: 0.5rem; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+
+.ex-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.ex-tile, .ex-fmt { position: relative; isolation: isolate; cursor: pointer; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in oklab, var(--sunk) 60%, transparent); transition: border-color var(--d1), transform var(--d1) var(--ease); }
+.ex-tile { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.15rem 0.6rem; padding: 0.7rem 0.75rem; }
+.ex-tile:hover, .ex-fmt:hover { border-color: var(--line-strong); }
+.ex-tile:active, .ex-fmt:active { transform: scale(calc(1 - 0.025 * var(--move))); }
+.ex-tile:has(input:focus-visible), .ex-fmt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ex-tile .ex-ti { grid-row: span 2; }
+.ex-ti { color: var(--muted); transition: color var(--d1); }
+.ex-tl { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 500; color: var(--ink); }
+.ex-ts { display: block; font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-tile[data-on], .ex-fmt[data-on] { border-color: transparent; }
+.ex-tile[data-on] .ex-ti, .ex-fmt[data-on] .ex-ti { color: var(--accent); }
+.ex-ext { color: var(--muted); }
+:is(.ex-tile, .ex-fmt)[data-on] :is(.ex-ts, .ex-ext) { color: color-mix(in oklab, var(--ink) 80%, var(--accent)); }
+.ex-sel { position: absolute; inset: -1px; z-index: -1; border-radius: inherit; border: 1px solid color-mix(in oklab, var(--accent) 70%, transparent); background: var(--glow); }
+
+.ex-pick { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.6rem; }
+.ex-pick > span { flex: none; font-size: 0.8125rem; font-weight: 500; color: var(--muted); }
+.ex-pick .field { height: 2.375rem; min-width: 0; }
+
+.ex-formats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.ex-fmt { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.8rem; }
+.ex-fmt[data-on] { border-color: color-mix(in oklab, var(--accent) 70%, transparent); background: var(--glow); }
+.ex-dot { flex: none; margin-left: auto; width: 1rem; height: 1rem; border-radius: 99px; border: 1.5px solid var(--line-strong); transition: border-color var(--d1), border-width var(--d2) var(--ease); }
+.ex-fmt[data-on] .ex-dot { border: 5px solid var(--accent); }
+
+.ex-receipt { display: flex; align-items: center; gap: 1rem; padding: 0.9rem 1rem; border-radius: 14px; border: 1px dashed color-mix(in oklab, var(--accent) 35%, var(--line-strong));
+  background: radial-gradient(120% 140% at 0% 0%, var(--glow), transparent 60%), var(--sunk); }
+.ex-receipt[data-empty] { border-color: color-mix(in oklab, var(--signal) 40%, var(--line-strong)); background: color-mix(in oklab, var(--signal) 6%, var(--sunk)); }
+.ex-n { display: flex; flex-direction: column; align-items: flex-start; flex: none; min-width: 3.5rem; font-size: 2rem; font-weight: 500; line-height: 1; letter-spacing: -0.03em; color: var(--ink); }
+.ex-nu { margin-top: 0.3rem; font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.ex-deck { font-size: 0.875rem; color: var(--muted); overflow-wrap: anywhere; }
+.ex-deck .num { color: var(--ink); }
+.ex-file { margin-top: 0.15rem; font-size: 0.75rem; color: var(--faint); overflow-wrap: anywhere; }
+.ex-help { font-size: 0.8125rem; line-height: 1.55; color: var(--muted); }
+.ex-help b { font-weight: 500; color: var(--ink); }
+.ex-err { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; border-radius: 10px; font-size: 0.8125rem; color: var(--bad); background: color-mix(in oklab, var(--bad) 10%, transparent); border: 1px solid color-mix(in oklab, var(--bad) 30%, transparent); }
+.ex-go { min-width: 10.5rem; justify-content: center; }
+.ex-go:disabled { opacity: 0.5; cursor: not-allowed; }
+.ex-gi { display: inline-grid; place-items: center; }
+
+@media (max-width: 560px) {
+  dialog.ex-dialog { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+  .ex-tile { padding: 0.6rem 0.65rem; }
+  .ex-fmt { padding: 0.6rem 0.75rem; }
+  .ex-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ex-formats { grid-template-columns: 1fr; }
+  .ex-dh, .ex-db { padding-inline: 1rem; }
+  .ex-df { padding-inline: 1rem; }
+  .ex-df .ex-go { flex: 1; }
+}

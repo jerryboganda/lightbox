@@ -69,6 +69,20 @@ const prefLabels: Record<string, [string, string]> = {
             </div>
           </div>
         </section>
+
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:4" aria-labelledby="mydata-h">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex gap-4">
+              <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="DatabaseBackup" size={20} /></span>
+              <div>
+                <h2 id="mydata-h" class="font-medium">Your data</h2>
+                <p class="mt-1 max-w-lg text-sm text-muted">One JSON file with everything you made here: bookmarks, collections, notes, highlights, your cards, goals, exams, MCQ answers, reviews and focus sessions. Nothing about classmates, and no password.</p>
+                <p class="mt-2 text-sm text-muted">Flashcards for Anki live in <a href="/library" class="text-accent hover:underline">Library › Export to Anki</a>.</p>
+              </div>
+            </div>
+            <a href="/api/export/me.json" download class="btn shrink-0 max-sm:ml-14 max-sm:self-start"><Icon name="Download" size={16} />Download my data</a>
+          </div>
+        </section>
       </>
     )}
   </div>

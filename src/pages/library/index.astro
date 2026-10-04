@@ -5,10 +5,12 @@ import App from '../../layouts/App.astro';
 import Icon from '../../components/Icon.astro';
 import CollectMenu from '../../components/islands/CollectMenu';
 import NotePad from '../../components/islands/NotePad';
+import ExportMenu from '../../components/islands/ExportMenu';
 import Row from './_Row.astro';
 import Empty from './_Empty.astro';
 import { cardByFact, mcqs } from '../../lib/data';
 import { db } from '../../server/db';
+import { exportScopes } from '../../server/exports';
 import { ago, allHighlights, dayKey, getCollection, history, itemInfo, libraryCounts, listCollections, listMarks, listNotes, listUserCards, pageTitles, sharedCollections, type Highlight, type ItemInfo } from '../../server/personal';
 
 const uid = Astro.locals.user!.id;
@@ -81,9 +83,12 @@ const days = (tab === 'history' ? history(uid) : []).map((d) => {
 });
 ---
 <App title="Library">
-  <header class="reveal" style="--i:0">
-    <h1 class="text-2xl font-medium">Library</h1>
-    <p class="mt-1 text-muted">Everything you saved, marked and wrote, in one place. Only you can see it, unless you share a collection.</p>
+  <header class="reveal flex flex-wrap items-end justify-between gap-x-6 gap-y-3" style="--i:0">
+    <div class="min-w-0 max-w-2xl">
+      <h1 class="text-2xl font-medium">Library</h1>
+      <p class="mt-1 text-muted">Everything you saved, marked and wrote, in one place. Only you can see it, unless you share a collection.</p>
+    </div>
+    <ExportMenu client:idle scopes={exportScopes(uid)} trigger="Export to Anki" />
   </header>
 
   <nav class="ltabs reveal" style="--i:1" aria-label="Library sections">
