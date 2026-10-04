@@ -15,7 +15,7 @@ const files = [...new Set(fs.map((f) => f.file))].sort();
 const printedAt = new Date(Date.now() + 5 * 3_600_000).toISOString().slice(0, 10);
 const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
 ---
-<App title="Printable notes" crumbs={[{ label: 'Study', href: '/study' }, { label: meta.label, href: `/study/${system}` }]}>
+<App title="Printable notes" crumbs={[{ label: meta.label, href: `/study/${system}` }]}>
   <div class="bar reveal" style="--i:0" data-no-print>
     <div class="min-w-0 flex-[1_1_18rem]">
       <h1 class="text-lg font-medium">Printable notes</h1>
@@ -68,7 +68,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
 </App>
 
 <script>
-  function init() { document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => b.addEventListener('click', () => window.print())); }
+  // onclick, not addEventListener: the topic and print pages both bind [data-print] after every swap.
+  function init() { document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => { b.onclick = () => window.print(); }); }
   init();
   document.addEventListener('astro:after-swap', init);
 </script>

@@ -135,7 +135,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
   }
   function init() {
     toc();
-    document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => b.addEventListener('click', () => window.print()));
+    // onclick, not addEventListener: the topic and print pages both bind [data-print] after every swap.
+    document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => { b.onclick = () => window.print(); });
   }
   init();
   document.addEventListener('astro:after-swap', init);
@@ -154,7 +155,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
   .peer:hover { color: var(--accent); }
   /* Reading progress: a hairline that fills along the topbar edge as the page scrolls. */
   .readbar { position: fixed; z-index: 16; top: calc(3.75rem - 2px); left: 0; right: 0; height: 2px; background: var(--accent); transform-origin: left; transform: scaleX(0); pointer-events: none; }
-  @supports (animation-timeline: scroll()) { .readbar { animation: read linear both; animation-timeline: scroll(root block); } }
+  /* Longhands on purpose: the CSS minifier folds `animation` + `animation-timeline` into one shorthand, which browsers reject. */
+  @supports (animation-timeline: scroll()) { .readbar { animation-name: read; animation-duration: auto; animation-timing-function: linear; animation-fill-mode: both; animation-timeline: scroll(root block); } }
   @supports not (animation-timeline: scroll()) { .readbar { display: none; } }
   @keyframes read { to { transform: scaleX(1); } }
   @media (max-width: 1023px) { .reader { grid-template-columns: 1fr; } .side { display: none; } }

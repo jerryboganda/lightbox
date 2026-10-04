@@ -127,7 +127,7 @@ const hasDue = d.dueNow + d.newToday > 0;
     <section class="panel tile col-e reveal" style="--i:6">
       <header class="tile-h"><h2>{d.recent.length ? 'Continue where you left off' : 'Start here'}</h2></header>
       <ul class="mt-2 divide-y divide-line">
-        {(d.recent.length ? d.recent.map((r) => ({ href: r.ref, title: r.title, sub: 'Topic note' })) : [
+        {(d.recent.length ? d.recent.map((r) => ({ href: r.ref, title: r.title, sub: r.kind === 'fact' ? 'Fact' : r.kind === 'source' ? 'Source page' : 'Topic note' })) : [
           { href: '/study/physics', title: 'Physics and safety', sub: `${facts.filter((f) => f.system === 'physics').length} facts, the biggest system` },
           { href: '/practice/cards', title: 'Your first flashcards', sub: '20 new cards a day, spaced by FSRS' },
           { href: '/review', title: 'What the papers got wrong', sub: 'Disputed keys and corrected figures' },

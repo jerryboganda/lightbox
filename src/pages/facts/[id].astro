@@ -9,7 +9,7 @@ import NotePad from '../../components/islands/NotePad';
 import CollectMenu from '../../components/islands/CollectMenu';
 import { factById, isEditionClash, LABELS, SYSTEMS, shortFile, type Fact } from '../../lib/data';
 import { bestMatch, pageText, segment, sourceHref, textLabel, unitsByFile, unitWord } from '../../lib/sources';
-import { factContext } from '../../server/study';
+import { factContext, inPlayer } from '../../server/study';
 import { noteVisit } from '../../server/progress';
 
 const f = factById.get(Astro.params.id ?? '');
@@ -154,7 +154,7 @@ const groups = d ? ([['On the same page', d.samePage], ['In the same topic', d.s
             <section class="reveal" style="--i:7">
               <h2 class="sec-h"><Icon name="Target" size={16} class="text-accent" />MCQs from this page</h2>
               <ul class="mt-2 divide-y divide-line">
-                {d.mcqs.map((m) => <li><a href={`/practice/mcq?q=${m.qid}`} class="group block py-2.5"><span class="num text-xs text-muted">{m.qid}</span><span class="mt-0.5 line-clamp-2 block text-sm transition-colors group-hover:text-accent">{m.stem}</span></a></li>)}
+                {d.mcqs.map((m) => <li><a href={inPlayer(m) ? `/practice/mcq?q=${m.qid}` : undefined} class:list={['block py-2.5', { group: inPlayer(m) }]}><span class="num text-xs text-muted">{m.qid}</span><span class="mt-0.5 line-clamp-2 block text-sm transition-colors group-hover:text-accent">{m.stem}</span></a></li>)}
               </ul>
             </section>
           )}
@@ -246,6 +246,7 @@ const groups = d ? ([['On the same page', d.samePage], ['In the same topic', d.s
     .pane { padding: 1rem; }
     .pbox { max-height: 62vh; }
   }
-  @media (prefers-reduced-motion: reduce) { .statement::before { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .statement::before { animation: none; } .pbox { scroll-behavior: auto; } }
   :global([data-motion="reduced"]) .statement::before { animation: none; }
+  :global([data-motion="reduced"]) .pbox { scroll-behavior: auto; }
 </style>

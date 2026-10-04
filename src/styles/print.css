@@ -11,7 +11,7 @@
   html, body { background: #fff !important; color: #000 !important; }
   body { font-size: 10.5pt; line-height: 1.5; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .rail, .tabs, .topbar, #lb-toasts, [data-no-print], [popover], .side, .readbar, astro-island { display: none !important; }
+  .rail, .tabs, .topbar, #lb-toasts, [data-no-print], [popover], .side, .readbar, astro-island[data-astro-transition-persist] { display: none !important; }
   .shell { display: block; }
   .content, .content.wide { max-width: none !important; padding: 0 !important; }
   .reader { display: block !important; max-width: none !important; }

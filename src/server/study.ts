@@ -1,4 +1,4 @@
-import { cardByFact, factById, facts, mcqs, topicBySlug, topics, type Fact, type Topic } from '../lib/data';
+import { cardByFact, factById, facts, mcqs, topicBySlug, topics, type Fact, type Mcq, type Topic } from '../lib/data';
 import { mcqStem } from '../lib/sources';
 
 export const MAX_COMPARE = 4;
@@ -36,6 +36,9 @@ export function compareWith(t: Topic, n = 3) {
     .sort((a, b) => b.s - a.s || a.x.title.localeCompare(b.x.title))
     .slice(0, n).map((r) => r.x);
 }
+
+/** The MCQ player only shows questions with options; ?q= for any other qid would open the wrong question. */
+export const inPlayer = (m: Mcq) => Object.keys(m.options).length >= 2;
 
 export const mcqsOnPage = (file: string, unit: number) => {
   const stem = mcqStem(file) + '__u';

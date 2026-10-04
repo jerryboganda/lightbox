@@ -88,6 +88,7 @@ test('compare works without the script and ignores junk', async ({ page }) => {
 test('topic reader offers compare, save as PDF and focus mode', async ({ page, isMobile }) => {
   await page.goto('/study/physics/bremsstrahlung');
   await expect(page.locator('[data-fact]').first()).toBeVisible();
+  expect(await page.locator('.readbar').evaluate((e) => getComputedStyle(e).animationName)).toBe('read');
   await page.evaluate(() => { (window as any).printed = 0; window.print = () => { (window as any).printed++; }; });
   await page.getByRole('button', { name: 'Save as PDF' }).click();
   expect(await page.evaluate(() => (window as any).printed)).toBe(1);
@@ -114,6 +115,16 @@ test('system print page lists every topic and waits for the button', async ({ pa
   expect(n).toBeGreaterThan(10);
   await expect(page.locator('section.topic:not(.refs)')).toHaveCount(n);
   expect(await page.evaluate(() => (window as any).printed)).toBe(0);
+  await page.getByRole('button', { name: /Print or save as PDF/ }).click();
+  expect(await page.evaluate(() => (window as any).printed)).toBe(1);
+});
+
+test('print buttons fire once after client-side navigation', async ({ page }) => {
+  await page.addInitScript(() => { (window as any).printed = 0; window.print = () => { (window as any).printed++; }; });
+  await page.goto('/study/physics/bremsstrahlung');
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Physics and safety' }).click();
+  await page.getByRole('link', { name: 'Print all' }).click();
+  await expect(page).toHaveURL(/\/study\/physics\/print$/);
   await page.getByRole('button', { name: /Print or save as PDF/ }).click();
   expect(await page.evaluate(() => (window as any).printed)).toBe(1);
 });

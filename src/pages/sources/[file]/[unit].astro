@@ -8,7 +8,7 @@ import NotFound from '../../../components/NotFound.astro';
 import PageText from '../../../components/PageText.astro';
 import { facts, images, shortFile, coverage } from '../../../lib/data';
 import { bestMatch, fileFromSlug, neighbours, pageText, segment, sourceHref, textLabel, unitsByFile, unitWord } from '../../../lib/sources';
-import { mcqsOnPage } from '../../../server/study';
+import { inPlayer, mcqsOnPage } from '../../../server/study';
 import { noteVisit } from '../../../server/progress';
 
 const file = fileFromSlug(Astro.params.file ?? '');
@@ -128,7 +128,7 @@ const label = (p: { file: string; page: number }) => `${shortFile(p.file).replac
             <section class="reveal" style="--i:5" aria-labelledby="mcq-h">
               <h2 id="mcq-h" class="sec-h"><Icon name="Target" size={16} class="text-accent" />MCQs from this {d.word.toLowerCase()}</h2>
               <ul class="mt-2 divide-y divide-line">
-                {d.mcqs.map((q) => <li><a href={`/practice/mcq?q=${q.qid}`} class="group block py-2.5"><span class="num text-xs text-muted">{q.qid}</span><span class="mt-0.5 line-clamp-2 block text-sm transition-colors group-hover:text-accent">{q.stem}</span></a></li>)}
+                {d.mcqs.map((q) => <li><a href={inPlayer(q) ? `/practice/mcq?q=${q.qid}` : undefined} class:list={['block py-2.5', { group: inPlayer(q) }]}><span class="num text-xs text-muted">{q.qid}</span><span class="mt-0.5 line-clamp-2 block text-sm transition-colors group-hover:text-accent">{q.stem}</span></a></li>)}
               </ul>
             </section>
           )}
@@ -150,7 +150,9 @@ const label = (p: { file: string; page: number }) => `${shortFile(p.file).replac
     document.querySelector('[data-strip] [aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
     if (!list || !box) return;
     let pinned: HTMLElement | null = null;
-    const light = (li: HTMLElement | null, scroll = false) => {
+    // scroll: move the text box to the passage. jump: also bring the box into view, only on an explicit action
+    // (hover or focus must never move the page, or the list slides away from the pointer and the focused item).
+    const light = (li: HTMLElement | null, scroll = false, jump = false) => {
       box.querySelectorAll('.on').forEach((e) => e.classList.remove('on'));
       list.querySelectorAll('.lit').forEach((e) => e.classList.remove('lit'));
       const r = li?.dataset.range?.split('-').map(Number);
@@ -161,7 +163,7 @@ const label = (p: { file: string; page: number }) => `${shortFile(p.file).replac
       if (scroll && first) {
         box.scrollTo({ top: Math.max(0, first.offsetTop - box.clientHeight * 0.3), behavior: reduced() ? 'auto' : 'smooth' });
         const top = box.getBoundingClientRect().top;
-        if (top < 0 || top > innerHeight * 0.6) box.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' });
+        if (jump && (top < 0 || top > innerHeight * 0.6)) box.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' });
       }
     };
     for (const li of list.querySelectorAll<HTMLElement>(':scope > li')) {
@@ -170,10 +172,10 @@ const label = (p: { file: string; page: number }) => `${shortFile(p.file).replac
       li.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') light(pinned); });
       li.addEventListener('focusin', () => light(li, true));
       li.addEventListener('focusout', (e) => { if (!li.contains(e.relatedTarget as Node)) light(pinned); });
-      li.querySelector('[data-locate]')?.addEventListener('click', () => { pinned = li; light(li, true); });
+      li.querySelector('[data-locate]')?.addEventListener('click', () => { pinned = li; light(li, true, true); });
     }
-    const hit = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
-    if (hit && list.contains(hit)) { pinned = hit; light(hit, true); }
+    const hit = location.hash && document.getElementById(location.hash.slice(1));
+    if (hit && list.contains(hit)) { pinned = hit; light(hit, true, true); }
   }
   init();
   document.addEventListener('astro:after-swap', init);
