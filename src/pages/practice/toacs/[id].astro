@@ -38,7 +38,10 @@ const toRepeat = stations.length - count('got');
 ---
 <App title={e.title} crumbs={[{ label: 'Practice', href: '/practice' }, { label: 'TOACS', href: '/practice/toacs' }]} wide={!e.finished_at}>
   {!e.finished_at ? (
-    <ToacsStation client:load id={e.id} seconds={configOf(e).seconds ?? 60} stations={stations.map(({ title, ...s }) => s as Station)} grades={grades} />
+    <>
+      <h1 class="sr-only">{e.title}</h1>
+      <ToacsStation client:load id={e.id} seconds={configOf(e).seconds ?? 60} stations={stations.map(({ title, ...s }) => s as Station)} grades={grades} />
+    </>
   ) : (
     <>
       {error && <p class="reveal mb-4 flex items-center gap-2 rounded-xl border border-signal/30 bg-signal/10 px-4 py-3 text-sm" role="alert"><Icon name="Info" size={16} class="text-signal" />{error}</p>}

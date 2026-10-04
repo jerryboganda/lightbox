@@ -122,6 +122,14 @@ describe('exam sessions', () => {
     vi.restoreAllMocks();
   });
 
+  it('skips items the data no longer has', async () => {
+    const uid = await user('stale');
+    const id = createExam(uid, build({ count: 2 })) as number;
+    db.prepare(`UPDATE exams SET items = json_insert(items, '$[#]', json('{"q":"GONE-Q1"}')) WHERE id = ?`).run(id);
+    expect(playerItems(own(uid, id)!)).toHaveLength(2);
+    expect(results(finish(uid, id)!).rows).toHaveLength(2);
+  });
+
   it('refuses empty selections', async () => {
     const uid = await user('picky');
     expect(createExam(uid, build({ filters: { history: 'wrong' } }))).toBeTypeOf('string');

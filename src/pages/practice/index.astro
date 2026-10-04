@@ -67,7 +67,7 @@ const C = 2 * Math.PI * 15;
       <div class="art-box" aria-hidden="true"><span class="scan"></span><i></i><i></i><i></i></div>
       <div class="relative">
         <h2 class="font-medium">TOACS stations</h2>
-        <p class="mt-1 text-sm text-muted">Timed image stations, then the source caption and verified facts.</p>
+        <p class="mt-1 text-sm text-muted">Timed image stations, then the source caption and the facts from that page.</p>
         <p class="mt-3 text-sm"><span class="num text-ink">{images.length}</span> <span class="text-muted">images from</span> <span class="num text-ink">{toacsGroups().length}</span> <span class="text-muted">sources</span></p>
         <span class="mode-cta">Run stations<Icon name="ArrowRight" size={15} /></span>
       </div>
@@ -146,6 +146,7 @@ const C = 2 * Math.PI * 15;
   .srow:hover { background: color-mix(in oklab, var(--ink) 4%, transparent); }
   .sicon { display: grid; place-items: center; flex: none; width: 2.1rem; height: 2.1rem; border-radius: 9px; color: var(--accent); background: var(--glow); }
   @media (max-width: 640px) { .mode-art, .mode-art.mcq { display: none; } }
+  @media (min-width: 641px) { .mode:not(.small) > .relative { padding-right: 8.5rem; } } /* copy stays clear of the art */
   @media (prefers-reduced-motion: reduce) { .mode:hover .art-box .scan { animation: none; } }
   :global([data-motion="reduced"]) .mode:hover .art-box .scan { animation: none; }
 </style>

@@ -23,7 +23,7 @@ if (!e.finished_at) {
 } else r = results(e);
 
 const shuffled = itemsOf(e).some((i) => i.o);
-const bars = r ? [['By paper', r.byPaper.map((g) => ({ ...g, label: PAPERS[g.key] ?? g.key }))], ['By system', r.bySystem.map((g) => ({ ...g, label: SYSTEMS[g.key]?.label ?? g.key }))]] as const : [];
+const bars = r ? [['By paper', r.byPaper.map((g) => ({ ...g, label: PAPERS[g.key] ?? g.key }))], ['By system, inferred', r.bySystem.map((g) => ({ ...g, label: SYSTEMS[g.key]?.label ?? g.key }))]] as const : [];
 const filters = r ? [['all', 'All', r.rows.length], ['wrong', 'Wrong', r.wrong], ['flagged', 'Flagged', r.flagged], ['unanswered', 'Unanswered', r.unanswered], ['disputed', 'Disputed', r.disputed]] as const : [];
 ---
 <App title={e.title} crumbs={[{ label: 'Practice', href: '/practice' }]} wide={!r}>

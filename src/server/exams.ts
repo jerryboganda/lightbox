@@ -109,7 +109,9 @@ export function createToacs(userId: number, count: number, seconds: number, grou
 
 // ---- reading -------------------------------------------------------------
 export const own = (userId: number, id: number) => db.prepare('SELECT * FROM exams WHERE id = ? AND user_id = ?').get(id, userId) as ExamRow | undefined;
-export const itemsOf = (e: ExamRow) => JSON.parse(e.items) as Item[];
+// Skips items the regenerated data no longer has, so an old session never 500s.
+const imageFiles = new Set(images.map((i) => i.file));
+export const itemsOf = (e: ExamRow) => (JSON.parse(e.items) as Item[]).filter((i) => (e.mode === 'toacs' ? imageFiles.has(i.q) : mcqByQid.has(i.q)));
 export const configOf = (e: ExamRow) => JSON.parse(e.config) as { pos?: number; seconds?: number; group?: string; filters?: Filters };
 export const deadlineOf = (e: ExamRow) => (e.time_limit ? e.started_at + e.time_limit * 1000 : null);
 export const answersOf = (examId: number) => new Map((db.prepare('SELECT item_id, choice, correct, flagged, ms, answered_at FROM exam_answers WHERE exam_id = ?').all(examId) as AnswerRow[]).map((a) => [a.item_id, a]));

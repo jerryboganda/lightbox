@@ -17,7 +17,7 @@ const STEPS = [
 <App title="TOACS stations" crumbs={[{ label: 'Practice', href: '/practice' }]}>
   <header class="reveal" style="--i:0">
     <h1 class="text-2xl font-medium">TOACS stations</h1>
-    <p class="mt-1 max-w-2xl text-muted">Timed image stations from the TOACS papers and slides. Model answers come only from the source captions and verified facts; Lightbox adds no diagnosis.</p>
+    <p class="mt-1 max-w-2xl text-muted">Timed image stations from the TOACS papers and slides. Model answers come only from the source captions and the facts on the same page, each with its status; Lightbox adds no diagnosis.</p>
   </header>
   {error && <p class="mt-4 flex items-center gap-2 rounded-xl border border-signal/30 bg-signal/10 px-4 py-3 text-sm" role="alert"><Icon name="Info" size={16} class="text-signal" />{error}</p>}
 
@@ -60,7 +60,7 @@ const STEPS = [
           </li>
         ))}
       </ol>
-      <p class="mt-5 flex gap-2 rounded-lg bg-sunk px-3 py-2.5 text-xs text-muted"><Icon name="ShieldCheck" size={15} class="mt-px shrink-0 text-accent" />If a page has no checked facts, the station says so and you compare with the caption only.</p>
+      <p class="mt-5 flex gap-2 rounded-lg bg-sunk px-3 py-2.5 text-xs text-muted"><Icon name="ShieldCheck" size={15} class="mt-px shrink-0 text-accent" />If a page has no facts, the station says so and you compare with the caption only.</p>
     </section>
   </div>
 </App>

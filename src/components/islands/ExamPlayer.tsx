@@ -74,6 +74,7 @@ export default function ExamPlayer(p: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
   const busy = useRef(false);
+  const refocus = useRef<string | null>(null);
   const iRef = useRef(i);
   iRef.current = i;
 
@@ -118,6 +119,8 @@ export default function ExamPlayer(p: Props) {
 
   const go = useCallback((n: number) => {
     if (n < 0 || n >= N || n === iRef.current) return;
+    // The question card is replaced: keep keyboard focus by moving it to the new stem.
+    refocus.current = (document.activeElement as HTMLElement | null)?.closest('.xp article') ? p.items[n].qid : null;
     send({ item: p.items[iRef.current].qid, ms: spent(), pos: n });
     setDir(n > iRef.current ? 1 : -1);
     setI(n); setPick(null); setErr('');
@@ -146,6 +149,7 @@ export default function ExamPlayer(p: Props) {
     setSubmitting(true);
     queue.current.push({ item: p.items[iRef.current].qid, ms: spent() });
     await flush();
+    if (queue.current.length) { busy.current = false; setSubmitting(false); toast('Some answers are not saved yet. Check your connection and try again.', 'bad'); return; }
     const r = await fetch(`/api/exams/${p.id}/finish`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => null);
     if (!r?.ok) { busy.current = false; setSubmitting(false); toast('Could not submit. Check your connection and try again.', 'bad'); return; }
     dialog.current?.close();
@@ -158,8 +162,8 @@ export default function ExamPlayer(p: Props) {
       if (/input|select|textarea/i.test(t.tagName) || e.metaKey || e.ctrlKey || e.altKey || dialog.current?.open || submitting) return;
       const k = e.key.toUpperCase();
       const idx = /^[1-9]$/.test(k) ? Number(k) - 1 : k.length === 1 ? LETTERS.indexOf(k) : -1;
-      if (idx >= 0 && idx < q.options.length && !checked) { e.preventDefault(); choose(q.options[idx][0]); }
-      else if (k === 'F') flag();
+      if (k === 'F') flag(); // F always flags; a sixth option is still 6
+      else if (idx >= 0 && idx < q.options.length && !checked) { e.preventDefault(); choose(q.options[idx][0]); }
       else if (e.key === 'Enter' && !t.closest('a, button:not([role=radio]), [popover]')) { e.preventDefault(); if (practice && !checked) check(); else go(i + 1); }
       else if (e.key === 'ArrowRight' && (checked || !t.closest('[role=radiogroup]'))) go(i + 1);
       else if (e.key === 'ArrowLeft' && (checked || !t.closest('[role=radiogroup]'))) go(i - 1);
@@ -192,6 +196,7 @@ export default function ExamPlayer(p: Props) {
   const cur = practice ? pick : a.choice;
   const verdict = verdictBadge(q.verdict ?? '', q.key ?? '');
   const focusIdx = Math.max(0, q.options.findIndex(([l]) => l === cur));
+  const reordered = q.options.some(([l], k) => l !== LETTERS[k]); // shuffled: source text keeps the paper's letters
 
   const grid = (
     <>
@@ -246,7 +251,7 @@ export default function ExamPlayer(p: Props) {
                 <Flag size={14} fill={a.flagged ? 'currentColor' : 'none'} />{a.flagged ? 'Flagged' : 'Flag'}
               </button>
             </div>
-            <h2 id="xp-stem" className="mt-3 text-[1.08rem] leading-relaxed [text-wrap:pretty] sm:text-[1.2rem]">{q.stem}</h2>
+            <h2 id="xp-stem" tabIndex={-1} ref={(el) => { if (el && refocus.current === q.qid) { refocus.current = null; el.focus(); } }} className="mt-3 scroll-mt-32 text-[1.08rem] leading-relaxed [text-wrap:pretty] sm:text-[1.2rem]">{q.stem}</h2>
             <div className="mt-5 grid gap-2.5" role="radiogroup" aria-labelledby="xp-stem" onKeyDown={roving}>
               {q.options.map(([l, t], k) => {
                 const s = state(l);
@@ -274,7 +279,7 @@ export default function ExamPlayer(p: Props) {
                     {verdict && <span className={`badge ${verdict[0]}`}>{verdict[1]}</span>}
                   </div>
                   {q.verdict === 'DISPUTED' && <p className="flex gap-2 rounded-lg bg-bad/10 px-3 py-2 text-ink"><CircleAlert size={16} className="mt-0.5 shrink-0 text-bad" /><span>The key is disputed. {q.key ? <>The paper says {display(q.key)}</> : 'The paper gives no usable key'}{q.myAnswer ? <>; answered blind, Lightbox chose {display(q.myAnswer)}</> : ''}. Weigh both sides below.</span></p>}
-                  {q.keyEvidence && <p className="text-muted"><span className="text-faint">Answer line in the source: </span>{q.keyEvidence}</p>}
+                  {q.keyEvidence && <p className="text-muted"><span className="text-faint">Answer line in the source{reordered ? ' (paper lettering)' : ''}: </span>{q.keyEvidence}</p>}
                   {!q.key && q.myAnswer && <p className="text-muted"><span className="text-ink">Lightbox's blind answer, unverified: {display(q.myAnswer)}</span>{q.confidence && ` (${q.confidence} confidence)`}. {q.reason}</p>}
                   {q.key && q.myAnswer && q.myAnswer !== q.key && q.verdict !== 'DISPUTED' && <p className="flex gap-2 text-muted"><CircleAlert size={16} className="mt-0.5 shrink-0 text-signal" />Answered blind, Lightbox chose {display(q.myAnswer)}. {q.reason}</p>}
                   {q.note && <p className="text-muted">{q.note}</p>}

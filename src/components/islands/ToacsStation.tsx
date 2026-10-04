@@ -25,6 +25,9 @@ export default function ToacsStation(p: Props) {
   const used = useRef(0);
   const answer = useRef<HTMLTextAreaElement>(null);
   const model = useRef<HTMLDivElement>(null);
+  const head = useRef<HTMLHeadingElement>(null);
+  const grading = useRef(false); // a ref, so two quick key presses cannot both grade
+  const refocus = useRef(false);
   const s = p.stations[i];
 
   const reveal = useCallback((auto = false) => {
@@ -37,6 +40,8 @@ export default function ToacsStation(p: Props) {
     t0.current = performance.now();
     setLeft(p.seconds); setRevealed(false); setZoom(null);
     if (answer.current) answer.current.value = '';
+    // The grade buttons just unmounted: keep keyboard focus on the station.
+    if (refocus.current) { refocus.current = false; head.current?.focus(); }
     const next = p.stations[i + 1];
     if (next) new Image().src = next.src;
   }, [i]);
@@ -55,16 +60,18 @@ export default function ToacsStation(p: Props) {
   }, [revealed, i, reveal]);
 
   const grade = async (g: Grade) => {
-    if (!revealed || busy) return;
+    if (!revealed || grading.current) return;
+    grading.current = true;
     setBusy(true);
+    const inPanel = !!model.current?.contains(document.activeElement); // the revealed panel is about to unmount
     const r = await fetch(`/api/exams/${p.id}/answer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ item: s.file, choice: g, ms: Math.round(used.current), pos: Math.min(i + 1, p.stations.length - 1) }) }).catch(() => null);
-    if (!r?.ok) { setBusy(false); toast('Could not save that grade. Try again.', 'bad'); return; }
+    if (!r?.ok) { grading.current = false; setBusy(false); toast('Could not save that grade. Try again.', 'bad'); return; }
     const all = { ...grades, [s.file]: g };
     setGrades(all);
     navigator.vibrate?.(8);
     const next = p.stations.findIndex((x, k) => k > i && !all[x.file]);
     const any = next >= 0 ? next : p.stations.findIndex((x) => !all[x.file]);
-    if (any >= 0) { setI(any); setBusy(false); return; }
+    if (any >= 0) { refocus.current = inPanel; setI(any); setBusy(false); grading.current = false; return; }
     await fetch(`/api/exams/${p.id}/finish`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => null);
     navigate(location.pathname, { history: 'replace' });
   };
@@ -114,7 +121,7 @@ export default function ToacsStation(p: Props) {
             <span className={`num text-lg ${revealed ? 'text-muted' : ''}`} style={{ color: revealed ? undefined : `var(--${state === 'accent' ? 'ink' : state})` }}>{Math.ceil(left)}</span>
           </div>
           <div className="min-w-0">
-            <h2 className="font-medium">Station {i + 1}</h2>
+            <h2 ref={head} tabIndex={-1} className="font-medium">Station {i + 1}</h2>
             <p className="truncate text-sm text-muted">{s.source}</p>
           </div>
         </div>
