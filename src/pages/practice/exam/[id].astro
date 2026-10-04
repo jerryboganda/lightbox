@@ -3,6 +3,7 @@ import App from '../../../layouts/App.astro';
 import Icon from '../../../components/Icon.astro';
 import ScoreRing from '../../../components/ScoreRing.astro';
 import ExamPlayer, { type Ans } from '../../../components/islands/ExamPlayer';
+import Thread from '../../../components/islands/Thread';
 import { answersOf, configOf, deadlineOf, itemsOf, load, playerItems, results } from '../../../server/exams';
 import { SYSTEMS } from '../../../lib/data';
 import { clock, dur, host, PAPERS, urls, verdictBadge, when } from '../../../lib/quiz';
@@ -131,6 +132,7 @@ const filters = r ? [['all', 'All', r.rows.length], ['wrong', 'Wrong', r.wrong],
                     {!m.keyEvidence && !m.myAnswer && !m.note && !links.length && !m.notBlind && <p class="text-muted">No further evidence recorded for this question.</p>}
                     <a href={`/practice/mcq?q=${m.qid}`} class="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">Open in the MCQ bank<Icon name="ArrowUpRight" size={13} /></a>
                   </div>
+                  <div class="mt-3"><Thread client:visible itemType="mcq" itemId={m.qid} compact /></div>
                 </details>
               </li>
             );

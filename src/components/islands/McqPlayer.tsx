@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, CircleAlert, ExternalLink, Info, RotateCcw, Shuffle, X } from 'lucide-react';
 import { host, PAPERS, urls, verdictBadge } from '../../lib/quiz';
+import Thread from './Thread';
 
 type Mcq = { qid: string; paper: string; stem: string; options: Record<string, string>; key: string; keyEvidence: string; myAnswer: string; confidence: string; reason: string; verdict: string; evidence: string; note: string; notBlind: boolean; notBlindReason: string; file: string; unit: number };
 type Attempt = { qid: string; choice: string; correct: number | null };
@@ -70,7 +71,7 @@ export default function McqPlayer() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!m || /input|select|textarea/i.test((e.target as HTMLElement).tagName) || e.metaKey || e.ctrlKey) return;
+      if (!m || /input|select|textarea/i.test((e.target as HTMLElement).tagName) || (e.target as HTMLElement).closest?.('[data-thread], dialog') || e.metaKey || e.ctrlKey) return;
       const letters = Object.keys(m.options);
       const k = e.key.toUpperCase();
       const idx = /^[1-9]$/.test(k) ? Number(k) - 1 : letters.indexOf(k);
@@ -149,6 +150,7 @@ export default function McqPlayer() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {checked && <div className="mt-3"><Thread itemType="mcq" itemId={m.qid} compact /></div>}
 
             <div className="mt-6 flex items-center gap-2">
               <button type="button" className="btn btn-ghost" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous question"><ArrowLeft size={16} /></button>

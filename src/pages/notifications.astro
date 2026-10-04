@@ -1,0 +1,127 @@
+---
+import App from '../layouts/App.astro';
+import Icon from '../components/Icon.astro';
+import { listNotifications, unreadCount } from '../server/class';
+import { dayKey, DAY } from '../server/analytics';
+
+const uid = Astro.locals.user!.id;
+const unreadOnly = Astro.url.searchParams.get('filter') === 'unread';
+const items = listNotifications(uid, 200, unreadOnly);
+const unread = unreadCount(uid);
+const safe = (h: string | null) => (h && /^\/(?![\/\\])/.test(h) ? h : null);
+const today = dayKey(Date.now()), yesterday = dayKey(Date.now() - DAY);
+const dayLabel = (k: string) => (k === today ? 'Today' : k === yesterday ? 'Yesterday' : new Date(`${k}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }));
+const time = (t: number) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' });
+const groups: { day: string; items: typeof items }[] = [];
+for (const n of items) {
+  const d = dayKey(n.createdAt);
+  if (groups.at(-1)?.day !== d) groups.push({ day: d, items: [] });
+  groups.at(-1)!.items.push(n);
+}
+const ICON: Record<string, string> = { reply: 'MessageSquareReply', report: 'Flag', poll: 'Vote', mention: 'AtSign', ai: 'Sparkles' };
+---
+<App title="Notifications">
+  <header class="head reveal" style="--i:0">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-medium">Notifications</h1>
+      <p class="mt-1 text-muted" data-unread-line>{unread ? <><span class="num text-ink" data-unread>{unread}</span> unread. Replies to your comments, reports and class news.</> : 'Replies to your comments, reports and class news.'}</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <nav class="seg" aria-label="Filter">
+        <a href="/notifications" aria-current={!unreadOnly ? 'page' : undefined}>All</a>
+        <a href="/notifications?filter=unread" aria-current={unreadOnly ? 'page' : undefined}>Unread{unread > 0 && <span class="num ml-1 text-faint">{unread}</span>}</a>
+      </nav>
+      <button type="button" class="btn btn-sm" data-read-all disabled={!unread}><Icon name="CheckCheck" size={15} />Mark all read</button>
+    </div>
+  </header>
+
+  {groups.length ? (
+    <div class="mt-6 grid gap-6">
+      {groups.map((g, gi) => (
+        <section class="reveal" style={`--i:${Math.min(gi + 1, 8)}`} aria-labelledby={`d-${g.day}`}>
+          <h2 id={`d-${g.day}`} class="mb-2 px-1 text-xs font-medium uppercase tracking-[0.06em] text-faint">{dayLabel(g.day)}</h2>
+          <ul class="panel list">
+            {g.items.map((n) => {
+              const href = safe(n.href);
+              return (
+                <li class="row" data-id={n.id} data-read={n.readAt ? '' : undefined}>
+                  <span class="ico" aria-hidden="true"><Icon name={ICON[n.kind] ?? 'Bell'} size={16} /></span>
+                  <div class="min-w-0 flex-1">
+                    {href ? <a href={href} class="t stretch" data-open>{n.title}</a> : <span class="t">{n.title}</span>}
+                    {!n.readAt && <span class="sr-only" data-unread-sr> (unread)</span>}
+                    {n.body && <p class="b">{n.body}</p>}
+                    <time class="num" datetime={new Date(n.createdAt).toISOString()}>{time(n.createdAt)}</time>
+                  </div>
+                  <span class="dot" aria-hidden="true"></span>
+                  {!n.readAt && <button type="button" class="btn btn-ghost btn-sm mark" data-mark aria-label={`Mark read: ${n.title}`} title="Mark read"><Icon name="Check" size={15} /></button>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  ) : (
+    <div class="panel reveal mt-6 grid justify-items-center gap-1.5 px-6 py-14 text-center" style="--i:1">
+      <span class="mb-2 grid h-12 w-12 place-items-center rounded-2xl bg-sunk text-faint"><Icon name="BellOff" size={22} /></span>
+      <p class="font-medium">{unreadOnly ? 'No unread notifications' : "You're all caught up"}</p>
+      <p class="max-w-md text-sm text-muted">{unreadOnly ? 'Everything here has been read.' : 'When someone replies to your comment, or there is news for the class, it shows up here and on the bell.'}</p>
+      {unreadOnly ? <a href="/notifications" class="btn btn-sm mt-3">Show all</a> : <a href="/class" class="btn btn-sm mt-3"><Icon name="MessagesSquare" size={15} />Go to the class</a>}
+    </div>
+  )}
+</App>
+
+<script>
+  const post = (body: object) => fetch('/api/notifications/read', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  function sync(unread: number) {
+    window.dispatchEvent(new CustomEvent('lb:notifications', { detail: { unread } }));
+    const n = document.querySelector('[data-unread]');
+    if (n) n.textContent = String(unread);
+    if (!unread) { document.querySelector<HTMLButtonElement>('[data-read-all]')?.setAttribute('disabled', ''); const l = document.querySelector('[data-unread-line]'); if (l) l.textContent = 'Replies to your comments, reports and class news.'; }
+  }
+  function settle(li: HTMLElement) {
+    li.dataset.read = '';
+    li.querySelector('[data-mark]')?.remove();
+    li.querySelector('[data-unread-sr]')?.remove();
+  }
+  function init() {
+    const all = document.querySelector<HTMLButtonElement>('[data-read-all]');
+    if (!all) return;
+    all.addEventListener('click', async () => {
+      all.disabled = true;
+      const r = await post({ all: true });
+      if (!r) { all.disabled = false; return; }
+      document.querySelectorAll<HTMLElement>('.row:not([data-read])').forEach(settle);
+      sync(r.unread);
+    });
+    document.querySelectorAll<HTMLElement>('.row:not([data-read])').forEach((li) => {
+      const id = Number(li.dataset.id);
+      li.querySelector('[data-mark]')?.addEventListener('click', async () => { const r = await post({ ids: [id] }); if (r) { settle(li); sync(r.unread); } });
+      li.querySelector('[data-open]')?.addEventListener('click', () => { if (li.hasAttribute('data-read')) return; settle(li); post({ ids: [id] }).then((r) => r && sync(r.unread)); });
+    });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+  .seg a { display: inline-flex; align-items: center; height: 1.9rem; padding: 0 0.8rem; border-radius: 8px; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1), background-color var(--d2) var(--ease); }
+  .seg a:hover { color: var(--ink); }
+  .seg a[aria-current="page"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 0 var(--line-strong), 0 2px 8px -4px rgb(0 0 0 / 0.4); }
+  .list { overflow: hidden; }
+  .row { position: relative; display: flex; align-items: flex-start; gap: 0.85rem; padding: 0.9rem 1rem; transition: background-color var(--d1); }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row:has(.stretch):hover { background: color-mix(in oklab, var(--ink) 3.5%, transparent); }
+  .ico { display: grid; place-items: center; flex: none; width: 2.1rem; height: 2.1rem; border-radius: 10px; background: var(--glow); color: var(--accent); }
+  .row[data-read] .ico { background: var(--sunk); color: var(--faint); }
+  .t { display: block; font-size: 0.9375rem; font-weight: 500; line-height: 1.4; }
+  .row[data-read] .t { font-weight: 400; color: var(--muted); }
+  .stretch::after { content: ""; position: absolute; inset: 0; }
+  .b { margin-top: 0.15rem; font-size: 0.875rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+  time { display: block; margin-top: 0.3rem; font-size: 0.75rem; color: var(--faint); }
+  .dot { flex: none; width: 0.55rem; height: 0.55rem; margin-top: 0.5rem; border-radius: 99px; background: var(--accent); box-shadow: 0 0 0 3px var(--glow); transition: opacity var(--d2); }
+  .row[data-read] .dot { opacity: 0; }
+  .mark { position: relative; z-index: 1; margin: -0.15rem -0.4rem 0 -0.35rem; padding: 0 0.5rem !important; }
+</style>
