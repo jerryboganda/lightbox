@@ -160,7 +160,10 @@ export default function StudyTimer() {
       (window as any).lbTimerWanted = null;
       const c = sRef.current!;
       if (c.dock === 'dot') commit({ ...c, dock: 'pill' });
-      if (req === 'start' && !sRef.current!.endsAt) start();
+      if (req === 'start' && !sRef.current!.endsAt) {
+        if (sRef.current!.phase === 'break') commit(nextPhase(sRef.current!)); // the buttons say "Start focus"
+        start();
+      }
       requestAnimationFrame(() => openPanel(req === 'goals'));
     };
     const onReq = (e: Event) => handle(String((e as CustomEvent).detail || 'open'));

@@ -38,7 +38,8 @@ if (!(window as any).lbCharts) {
   (window as any).lbCharts = true;
   document.addEventListener('pointerover', (e) => { const el = mark(e); if (el) show(el); else if (!document.activeElement?.closest('[data-tip]')) hide(); });
   document.addEventListener('focusin', (e) => { const el = mark(e); if (el) show(el); else hide(); });
-  document.addEventListener('scroll', hide, { passive: true, capture: true });
+  // Arrow keys can scroll the heatmap; keep the focused mark's tip, re-placed, instead of dropping it.
+  document.addEventListener('scroll', () => { const el = cur; hide(); if (el && el === document.activeElement) show(el); }, { passive: true, capture: true });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') return hide();
     const el = mark(e), box = el?.closest('[data-rove]');

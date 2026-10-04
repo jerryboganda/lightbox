@@ -42,9 +42,10 @@ const room = [...a.mastery].sort((x, y) => x.seen / x.total - y.seen / y.total)[
 const radarTake = !seenAll ? 'How much of each system you have started, and how much is now strong.'
   : `${best.strong ? `Strongest: ${best.label}, ${pct(best.strong / best.total)} strong.` : `${started.length} of ${a.mastery.length} systems started; nothing strong yet.`} Most room: ${room.label} (${room.seen} of ${room.total} started).`;
 const tw = a.trend[11], lw = a.trend[10], lastKeyed = [...a.trend].reverse().find((w) => w.keyed);
+const pts = tw.keyed && lw.keyed ? Math.round((tw.acc! - lw.acc!) * 100) : 0;
 const accTake = trendEmpty ? 'Weekly accuracy on questions with an answer key, with how many you answered.'
   : !lastKeyed ? 'You have answered only questions without an answer key so far.'
-  : tw.keyed ? `${pct(tw.acc!)} on ${tw.keyed} keyed answer${tw.keyed === 1 ? '' : 's'} this week${lw.keyed ? `, ${tw.acc! >= lw.acc! ? 'up' : 'down'} ${Math.abs(Math.round((tw.acc! - lw.acc!) * 100))} points on last week` : ''}.`
+  : tw.keyed ? `${pct(tw.acc!)} on ${tw.keyed} keyed answer${tw.keyed === 1 ? '' : 's'} this week${!lw.keyed ? '' : pts ? `, ${pts > 0 ? 'up' : 'down'} ${Math.abs(pts)} points on last week` : ', level with last week'}.`
   : `Latest: ${pct(lastKeyed.acc!)} in the week of ${short(lastKeyed.start)}.`;
 const src = ['focus', 'mcq', 'exam'] as const;
 const top = src.map((k) => [k, a.time.slice(7).reduce((s, d) => s + d[k], 0)] as const).sort((x, y) => y[1] - x[1])[0];

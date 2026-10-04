@@ -45,5 +45,6 @@ const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)}%
   .rdy-meter span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; transform: scaleX(var(--w)); animation: rdy-grow calc(0.8s * var(--move)) var(--ease) both; animation-delay: calc(var(--i) * 70ms + 300ms); }
   @keyframes rdy-grow { from { transform: scaleX(0); } }
   .rdy-note { margin-top: 0.3rem; font-size: 0.75rem; color: var(--muted); }
+  @media (max-width: 25rem) { .compact .rdy-parts { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 30rem) { .rdy:not(.compact) { grid-template-columns: 1fr; justify-items: center; } .rdy:not(.compact) .rdy-parts { width: 100%; } }
 </style>

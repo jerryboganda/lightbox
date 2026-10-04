@@ -80,6 +80,17 @@ test('a focus phase that ended while away is recorded once', async ({ page }) =>
   await expect(page.locator('.tm-pill-phase')).toHaveText('Break');
 });
 
+test('"Start focus" during a break starts a focus phase, not the break', async ({ page }) => {
+  await page.goto('/api/health');
+  await page.evaluate(() => localStorage.setItem('lb-timer', JSON.stringify({ phase: 'break', focus: 25, brk: 5, total: 300_000, left: 300_000, endsAt: null, startedAt: null, id: crypto.randomUUID(), sound: false, title: false, dock: 'pill' })));
+  await page.goto('/analytics');
+  await expect(page.locator('.tm-pill-phase')).toHaveText('Break');
+  await page.getByRole('button', { name: 'Start focus' }).first().click();
+  const panel = page.getByRole('dialog', { name: 'Study timer' });
+  await expect(panel.locator('.tm-phase')).toHaveText('Focus');
+  await expect(panel.getByRole('button', { name: 'Pause' })).toBeVisible();
+});
+
 test('daily goals edit from the analytics page and show on home', async ({ page }) => {
   await page.goto('/analytics');
   await page.getByRole('button', { name: 'Daily goals' }).click();

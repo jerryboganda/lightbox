@@ -22,9 +22,10 @@ const label = (i: number) => {
     <polygon points={poly(strong)} class="rd-strong" pathLength="1" />
     {data.map((d, i) => { const l = label(i); return <text x={l.x.toFixed(1)} y={l.y.toFixed(1)} text-anchor={l.anchor} class="rd-label" aria-hidden="true">{d.short}</text>; })}
     {data.map((d, i) => {
-      const [x, y] = pt(i, Math.max(strong[i], 0.02));
+      // The whole spoke is the hover target: with nothing strong yet every dot sits at the centre.
+      const [x, y] = pt(i, Math.max(strong[i], 0.02)), [x0, y0] = pt(i, 0.2), [x1, y1] = pt(i, 1.1);
       return sample ? <circle cx={x} cy={y} r="3" class="rd-dot" style={`--i:${i}`} />
-        : <g class="rd-hit" role="img" aria-label={tipOf(d)} data-tip={tipOf(d)} tabindex={i === 0 ? 0 : -1}><circle cx={x} cy={y} r="14" class="rd-target" /><circle cx={x} cy={y} r="3.5" class="rd-dot" style={`--i:${i}`} /></g>;
+        : <g class="rd-hit" role="img" aria-label={tipOf(d)} data-tip={tipOf(d)} tabindex={i === 0 ? 0 : -1}><line x1={x0} y1={y0} x2={x1} y2={y1} class="rd-target" /><circle cx={x} cy={y} r="3.5" class="rd-dot" style={`--i:${i}`} /></g>;
     })}
   </svg>
   <p class="rd-key" aria-hidden="true"><span class="ch-key"><i style="--c:color-mix(in oklab, var(--accent) 28%, transparent)"></i>Started</span><span class="ch-key"><i style="--c:var(--accent)"></i>Strong (interval of 7+ days)</span></p>
@@ -42,9 +43,10 @@ const label = (i: number) => {
   .rd-strong { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; animation: rd-draw calc(1.2s * var(--move)) var(--ease) both 0.25s; }
   .rd-label { font-size: 12.5px; fill: var(--muted); font-family: var(--font-sans); }
   .rd-dot { fill: var(--panel); stroke: var(--accent); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: rd-pop calc(0.4s * var(--move)) var(--ease) both; animation-delay: calc(var(--i) * 40ms + 0.7s); }
-  .rd-target { fill: transparent; }
+  .rd-target { stroke: transparent; stroke-width: 22; stroke-linecap: round; }
   .rd-hit { cursor: default; outline: none; }
-  .rd-hit:focus-visible .rd-target, .rd-hit:global(.is-tip) .rd-target { fill: var(--glow); stroke: var(--accent); stroke-width: 1.5; }
+  .rd-hit:focus-visible .rd-target, .rd-hit:global(.is-tip) .rd-target { stroke: var(--glow); }
+  .rd-hit:focus-visible .rd-dot, .rd-hit:global(.is-tip) .rd-dot { fill: var(--accent); }
   .rd-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem 1.1rem; margin-top: 0.75rem; font-size: 0.75rem; color: var(--muted); }
   @keyframes rd-grow { from { transform: scale(0.5); opacity: 0; } }
   @keyframes rd-draw { from { stroke-dashoffset: 1; } }
