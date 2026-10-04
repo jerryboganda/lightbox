@@ -1,0 +1,49 @@
+---
+// One saved item as a rich row. `mark` renders a pressed bookmark/weak toggle (state known on the server).
+import Icon from '../../components/Icon.astro';
+import Status from '../../components/Status.astro';
+import type { ItemInfo } from '../../server/personal';
+interface Props { info: ItemInfo; thumb?: string | null; mark?: 'bookmark' | 'weak'; item?: boolean }
+const { info, thumb, mark, item = false } = Astro.props;
+const TYPE: Record<string, [string, string]> = { fact: ['Fact', 'FileText'], topic: ['Topic', 'BookOpenText'], mcq: ['MCQ', 'CircleHelp'], image: ['Image', 'Image'], card: ['Card', 'Layers'] };
+const [typeLabel, icon] = TYPE[info.type] ?? ['Item', 'Circle'];
+---
+<li class="lrow" data-row data-item={item ? '' : undefined} data-type={info.type} data-id={info.id}>
+  <span class:list={['lead', { img: !!thumb }]} aria-hidden="true">{thumb ? <img src={thumb} alt="" width="56" height="56" loading="lazy" decoding="async" /> : <Icon name={icon} size={18} />}</span>
+  <div class="min-w-0 flex-1">
+    <a href={info.href} class="title">{info.title}</a>
+    <div class="meta"><span class="kind">{typeLabel}</span>{info.label && <Status label={info.label} />}<span class="truncate">{info.sub}</span></div>
+    <slot name="body" />
+  </div>
+  <div class="acts">
+    <slot />
+    {mark && (
+      <button type="button" class="btn btn-sm btn-ghost mk !px-2" data-mark={mark} data-type={info.type} data-id={info.id} aria-pressed="true"
+        aria-label={`${mark === 'bookmark' ? 'Bookmark' : 'Weak spot'}: ${info.id}`} title={mark === 'bookmark' ? 'Remove bookmark (click again to undo)' : 'Remove weak mark (click again to undo)'}>
+        <Icon name={mark === 'bookmark' ? 'Bookmark' : 'Flag'} size={15} />
+      </button>
+    )}
+  </div>
+</li>
+
+<style>
+  .lrow { display: flex; align-items: flex-start; gap: 0.9rem; padding: 0.85rem 1rem; transition: background-color var(--d1), opacity var(--d3); }
+  .lrow:hover { background: color-mix(in oklab, var(--ink) 3%, transparent); }
+  .lrow:has(.acts [data-mark][aria-pressed="false"]) { opacity: 0.55; }
+  .lead { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 11px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); overflow: hidden; }
+  .lead.img { width: 3.5rem; height: 3.5rem; border-radius: 10px; }
+  .lead img { width: 100%; height: 100%; object-fit: cover; }
+  .title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; transition: color var(--d1); }
+  .title:hover { color: var(--accent); }
+  .meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; min-width: 0; font-size: 0.75rem; color: var(--faint); }
+  .kind { flex: none; font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .acts { display: flex; align-items: center; gap: 0.1rem; flex: none; margin: -0.2rem -0.4rem 0 0; }
+  /* Phones: toggles stack in a slim right column; reorder rows put their controls under the text. */
+  @media (max-width: 520px) {
+    .lrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; padding: 0.8rem 0.85rem; }
+    .lead.img { width: 3rem; height: 3rem; }
+    .acts { flex-direction: column; margin: -0.35rem -0.45rem -0.35rem 0; }
+    .lrow[data-item] { grid-template-columns: auto minmax(0, 1fr); }
+    .lrow[data-item] .acts { grid-column: 2; flex-direction: row; justify-content: flex-end; margin: -0.6rem -0.45rem -0.45rem 0; }
+  }
+</style>

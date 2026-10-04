@@ -1,6 +1,6 @@
 import { createEmptyCard, fsrs, Rating, State, type Card as FCard, type Grade } from 'ts-fsrs';
 import { db, now } from './db';
-import { cards, facts, mcqs } from '../lib/data';
+import { cardByFact, cards, facts, mcqs } from '../lib/data';
 
 export const NEW_PER_DAY = 20;
 const TZ_MS = 5 * 3_600_000; // Pakistan time for "today" and streaks
@@ -15,20 +15,33 @@ const revive = (s: string): FCard => {
 
 const factSystem = new Map(facts.map((f) => [f.id, f.system]));
 
+// User-made cards are scheduled like fact cards under the id 'U<id>'. New ones come first and share the daily new limit.
+const userCardNum = (id: string) => (/^U[1-9]\d{0,12}$/.test(id) ? Number(id.slice(1)) : 0);
+
 export function srsQueue(userId: number) {
-  const due = db.prepare('SELECT fact_id, card FROM srs_cards WHERE user_id = ? AND due <= ? ORDER BY due LIMIT 300').all(userId, now()) as { fact_id: string; card: string }[];
+  const mine = db.prepare('SELECT id, front, back, fact_id factId, path FROM user_cards WHERE user_id = ? ORDER BY id').all(userId) as { id: number; front: string; back: string; factId: string | null; path: string | null }[];
+  const own = new Map(mine.map((c) => [`U${c.id}`, c]));
+  const due = (db.prepare('SELECT fact_id, card FROM srs_cards WHERE user_id = ? AND due <= ? ORDER BY due LIMIT 300').all(userId, now()) as { fact_id: string; card: string }[])
+    .filter((r) => !r.fact_id.startsWith('U') || own.has(r.fact_id));
   const introducedToday = (db.prepare('SELECT COUNT(*) n FROM srs_cards WHERE user_id = ? AND introduced >= ?').get(userId, dayStart()) as any).n;
   const seen = new Set((db.prepare('SELECT fact_id FROM srs_cards WHERE user_id = ?').all(userId) as any[]).map((r) => r.fact_id));
-  const fresh = cards.filter((c) => !seen.has(c.factId)).slice(0, Math.max(0, NEW_PER_DAY - introducedToday));
+  const unseen = [...[...own.keys()].filter((id) => !seen.has(id)), ...cards.filter((c) => !seen.has(c.factId)).map((c) => c.factId)];
+  const fresh = unseen.slice(0, Math.max(0, NEW_PER_DAY - introducedToday));
+  const custom = Object.fromEntries([...due.map((r) => r.fact_id), ...fresh].filter((id) => own.has(id)).map((id) => {
+    const { front, back, factId, path } = own.get(id)!;
+    return [id, { front, back, factId, path }];
+  }));
   return {
     due: due.map((r) => ({ factId: r.fact_id, card: JSON.parse(r.card) })),
-    fresh: fresh.map((c) => c.factId),
-    remainingNew: cards.length - seen.size,
+    fresh,
+    remainingNew: unseen.length,
+    custom,
   };
 }
 
 export function srsReview(userId: number, factId: string, rating: Grade, reviewedAt: number, clientId: string) {
-  if (!cards.some((c) => c.factId === factId)) return false;
+  const n = userCardNum(factId);
+  if (n ? !db.prepare('SELECT 1 FROM user_cards WHERE id = ? AND user_id = ?').get(n, userId) : !cardByFact.has(factId)) return false;
   return db.transaction(() => {
     if (clientId && db.prepare('SELECT 1 FROM srs_log WHERE client_id = ?').get(clientId)) return true; // already synced
     const row = db.prepare('SELECT card FROM srs_cards WHERE user_id = ? AND fact_id = ?').get(userId, factId) as { card: string } | undefined;

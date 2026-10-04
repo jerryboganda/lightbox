@@ -1,0 +1,396 @@
+---
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import CollectMenu from '../../components/islands/CollectMenu';
+import NotePad from '../../components/islands/NotePad';
+import Row from './_Row.astro';
+import Empty from './_Empty.astro';
+import { cardByFact, mcqs } from '../../lib/data';
+import { db } from '../../server/db';
+import { ago, allHighlights, dayKey, getCollection, history, itemInfo, libraryCounts, listCollections, listMarks, listNotes, listUserCards, pageTitles, sharedCollections, type Highlight, type ItemInfo } from '../../server/personal';
+
+const uid = Astro.locals.user!.id;
+const p = Astro.url.searchParams;
+const TABS = [
+  ['bookmarks', 'Bookmarks', 'Bookmark'],
+  ['weak', 'Weak spots', 'Flag'],
+  ['collections', 'Collections', 'FolderOpen'],
+  ['notes', 'Notes', 'NotebookPen'],
+  ['highlights', 'Highlights', 'Highlighter'],
+  ['cards', 'My cards', 'Layers'],
+  ['history', 'History', 'History'],
+] as const;
+const tab = TABS.find(([k]) => k === p.get('tab'))?.[0] ?? 'bookmarks';
+const counts: Record<string, number> = libraryCounts(uid);
+const href = (k: string) => (k === 'bookmarks' ? '/library' : `/library?tab=${k}`);
+
+const mods = import.meta.glob<{ default: ImageMetadata }>('/src/assets/atlas/*', { eager: true });
+const atlas = new Map(Object.entries(mods).map(([k, m]) => [k.split('/').pop()!, m.default]));
+const thumb = async (file?: string) => { const src = file ? atlas.get(file) : undefined; return src ? (await getImage({ src, width: 112, format: 'webp', quality: 70 })).src : null; };
+
+// Bookmarks and weak spots
+const TYPES: [string, string][] = [['fact', 'Facts'], ['topic', 'Topics'], ['mcq', 'MCQs'], ['image', 'Images'], ['card', 'Cards']];
+const kind = tab === 'weak' ? 'weak' : 'bookmark';
+const type = p.get('type');
+const markedAll = tab === 'bookmarks' || tab === 'weak'
+  ? listMarks(uid).filter((m) => m.kind === kind).map((m) => itemInfo(uid, m.type, m.id)).filter((x): x is ItemInfo => !!x) : [];
+const typeCounts = TYPES.map(([t, l]) => ({ t, l, n: markedAll.filter((i) => i.type === t).length })).filter((x) => x.n);
+const marked = await Promise.all(markedAll.filter((i) => !type || i.type === type).map(async (info) => ({ info, thumb: await thumb(info.image) })));
+
+// Collections
+const cols = tab === 'collections' ? listCollections(uid).map((c) => ({ ...c, preview: getCollection(uid, c.id)!.items.slice(0, 3).map((it) => itemInfo(uid, it.type, it.id)?.title).filter((t): t is string => !!t) })) : [];
+const classShared = tab === 'collections' ? sharedCollections().filter((c) => c.ownerId !== uid).length : 0;
+
+// Notes
+const notes = tab === 'notes' ? (await Promise.all(listNotes(uid).map(async (n) => {
+  const info = itemInfo(uid, n.type, n.id);
+  return info ? { ...n, info, thumb: await thumb(info.image) } : null;
+}))).filter((n) => !!n) : [];
+
+// Highlights, grouped by page
+const hls = tab === 'highlights' ? allHighlights(uid) : [];
+const hlGroups = [...hls.reduce((m, h) => m.set(h.path, [...(m.get(h.path) ?? []), h]), new Map<string, Highlight[]>())];
+const titles = pageTitles(uid, hlGroups.map(([path]) => path));
+
+// My cards
+const mine = tab === 'cards' ? listUserCards(uid) : [];
+const DAY = 86_400_000;
+const dueText = (due: number | null) => due == null ? ['New', 's-agreed'] : due <= Date.now() ? ['Due now', 's-unchecked'] : [`Due in ${Math.max(1, Math.round((due - Date.now()) / DAY))} d`, 's-neutral'];
+
+// History: visits one by one; MCQs and reviews folded into one entry per day.
+const qById = new Map(mcqs.map((m) => [m.qid, m]));
+const ownFront = new Map((tab === 'history' ? db.prepare('SELECT id, front FROM user_cards WHERE user_id = ?').all(uid) as { id: number; front: string }[] : []).map((c) => [`U${c.id}`, c.front]));
+const RATING = ['', 'Again', 'Hard', 'Good', 'Easy'];
+const RATING_C = ['', 'var(--bad)', 'var(--signal)', 'var(--accent)', 'var(--ok)'];
+const hhmm = (t: number) => new Date(t + 5 * 3_600_000).toISOString().slice(11, 16);
+const today = dayKey(Date.now()), yesterday = dayKey(Date.now() - DAY);
+const dayLabel = (d: string) => d === today ? 'Today' : d === yesterday ? 'Yesterday' : new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const VISIT_ICON: Record<string, string> = { topic: 'BookOpenText', fact: 'FileText', source: 'ScrollText' };
+const days = (tab === 'history' ? history(uid) : []).map((d) => {
+  const visits = d.events.flatMap((e) => (e.kind === 'visit' ? [e] : []));
+  const answers = d.events.flatMap((e) => (e.kind === 'mcq' ? [{ ...e, stem: qById.get(e.qid)?.stem ?? e.qid }] : []));
+  const reviews = d.events.flatMap((e) => (e.kind === 'review' ? [{ ...e, front: ownFront.get(e.factId) ?? cardByFact.get(e.factId)?.front ?? (e.factId.startsWith('U') ? 'Your card (deleted)' : e.factId) }] : []));
+  const entries = [
+    ...visits.map((v) => ({ at: v.at, kind: 'visit' as const, v })),
+    ...(answers.length ? [{ at: answers[0].at, kind: 'mcq' as const, answers, right: answers.filter((a) => a.correct === 1).length, wrong: answers.filter((a) => a.correct === 0).length }] : []),
+    ...(reviews.length ? [{ at: reviews[0].at, kind: 'review' as const, reviews, by: [1, 2, 3, 4].map((r) => reviews.filter((x) => x.rating === r).length) }] : []),
+  ].sort((a, b) => b.at - a.at);
+  return { day: d.day, entries, summary: [visits.length && `${visits.length} read`, answers.length && `${answers.length} MCQ${answers.length === 1 ? '' : 's'}`, reviews.length && `${reviews.length} review${reviews.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ') };
+});
+---
+<App title="Library">
+  <header class="reveal" style="--i:0">
+    <h1 class="text-2xl font-medium">Library</h1>
+    <p class="mt-1 text-muted">Everything you saved, marked and wrote, in one place. Only you can see it, unless you share a collection.</p>
+  </header>
+
+  <nav class="ltabs reveal" style="--i:1" aria-label="Library sections">
+    {TABS.map(([k, label, icon]) => (
+      <a href={href(k)} class:list={['lt', { on: tab === k }]} aria-current={tab === k ? 'page' : undefined}>
+        {tab === k && <span class="lt-ind" transition:name="lib-tab" />}
+        <Icon name={icon} size={16} /><span>{label}</span>{k !== 'history' && <span class="num lt-n" data-tab-count={k}>{counts[k]}</span>}
+      </a>
+    ))}
+  </nav>
+
+  <div class="mt-5" data-no-highlight>
+    {(tab === 'bookmarks' || tab === 'weak') && (
+      <section aria-label={tab === 'weak' ? 'Weak spots' : 'Bookmarks'}>
+        {markedAll.length > 0 && (
+          <div class="reveal mb-3 flex flex-wrap items-center gap-2" style="--i:2">
+            {typeCounts.length > 1 && (
+              <>
+                <a href={href(tab)} class:list={['chip', { on: !type }]} aria-current={!type ? 'true' : undefined}>All <span class="num">{markedAll.length}</span></a>
+                {typeCounts.map((x) => <a href={`${href(tab)}${tab === 'bookmarks' ? '?' : '&'}type=${x.t}`} class:list={['chip', { on: type === x.t }]} aria-current={type === x.t ? 'true' : undefined}>{x.l} <span class="num">{x.n}</span></a>)}
+              </>
+            )}
+            {tab === 'weak' && <a href="/practice/builder" class="btn btn-sm ml-auto"><Icon name="ListChecks" size={15} />Build a quiz to drill them</a>}
+          </div>
+        )}
+        {marked.length ? (
+          <ul class="panel reveal divide-y divide-line overflow-hidden" style="--i:3" data-list>
+            {marked.map((m) => (
+              <Row info={m.info} thumb={m.thumb} mark={kind}>
+                {m.info.type !== 'card' && <CollectMenu client:visible itemType={m.info.type as 'fact'} itemId={m.info.id} compact />}
+              </Row>
+            ))}
+          </ul>
+        ) : markedAll.length ? (
+          <Empty icon="Filter" title="Nothing of this type" text="Your other saved items are under All."><a href={href(tab)} class="btn btn-primary">Show all</a></Empty>
+        ) : tab === 'weak' ? (
+          <Empty icon="Flag" title="No weak spots marked yet" text="Flag the facts, questions and cards you keep missing, from a flashcard or a fact card. They gather here so you can drill them on purpose.">
+            <a href="/practice/cards" class="btn btn-primary"><Icon name="Layers" size={16} />Review flashcards</a>
+            <a href="/practice/mcq" class="btn"><Icon name="Target" size={16} />Practise MCQs</a>
+          </Empty>
+        ) : (
+          <Empty icon="Bookmark" title="Nothing bookmarked yet" text="Use the bookmark on any fact, topic, MCQ or image and it lands here, ready to revisit before the exam.">
+            <a href="/study" class="btn btn-primary"><Icon name="BookOpenText" size={16} />Browse topics</a>
+            <a href="/facts" class="btn"><Icon name="ListFilter" size={16} />Explore facts</a>
+          </Empty>
+        )}
+      </section>
+    )}
+
+    {tab === 'collections' && (
+      <section aria-label="Collections">
+        <div class="colgrid">
+          <form class="panel newcol reveal" style="--i:2" data-form="new-col">
+            <div class="flex items-center gap-2.5"><span class="cico"><Icon name="FolderPlus" size={18} /></span><h2 class="font-medium">New collection</h2></div>
+            <label class="mt-4 block text-sm font-medium" for="nc-name">Name</label>
+            <input id="nc-name" name="name" class="field mt-1.5" required maxlength="80" placeholder="e.g. Neuro high-yield" autocomplete="off" />
+            <label class="mt-3 block text-sm font-medium" for="nc-desc">Description <span class="font-normal text-faint">(optional)</span></label>
+            <input id="nc-desc" name="description" class="field mt-1.5" maxlength="500" placeholder="What is it for?" autocomplete="off" />
+            <button class="btn btn-primary mt-4 w-full justify-center"><Icon name="Plus" size={16} />Create collection</button>
+          </form>
+          {cols.map((c, i) => (
+            <a href={`/library/c/${c.id}`} class="panel lift press colcard reveal" style={`--i:${Math.min(i + 3, 12)}`}>
+              <div class="flex items-start justify-between gap-3">
+                <span class="cico"><Icon name={c.shared ? 'FolderOpen' : 'Folder'} size={18} /></span>
+                {c.shared ? <span class="badge s-agreed">shared</span> : <span class="badge s-neutral">private</span>}
+              </div>
+              <h2 class="mt-3 truncate font-medium">{c.name}</h2>
+              {c.description && <p class="mt-0.5 line-clamp-2 text-sm text-muted">{c.description}</p>}
+              {c.preview.length > 0 ? <ul class="preview">{c.preview.map((t) => <li>{t}</li>)}</ul> : <p class="mt-3 text-sm text-faint">Empty for now. Press Collect on any bookmark to add to it.</p>}
+              <p class="mt-auto pt-4 text-xs text-faint"><span class="num text-muted">{c.count}</span> item{c.count === 1 ? '' : 's'} · updated {ago(c.updatedAt)}</p>
+            </a>
+          ))}
+          {!cols.length && (
+            <div class="panel colhint reveal" style="--i:3">
+              <Icon name="Sparkles" size={18} class="text-accent" />
+              <h2 class="mt-3 font-medium">Group what belongs together</h2>
+              <p class="mt-1 text-sm text-muted">Gather facts, topics, MCQs and images around a revision theme, like "Mammography signs" or "Physics formulas". Use Collect on any bookmark to add it. Share a collection with the class when it is ready.</p>
+            </div>
+          )}
+        </div>
+        <a href="/library/shared" class="panel lift press classlink reveal mt-4" style="--i:4">
+          <span class="cico"><Icon name="UsersRound" size={18} /></span>
+          <span class="min-w-0 flex-1"><span class="block font-medium">Class collections</span><span class="block text-sm text-muted">{classShared ? `${classShared} shared by classmates. Copy any of them into your own library.` : 'Collections your classmates share appear here.'}</span></span>
+          <Icon name="ArrowRight" size={18} class="text-faint" />
+        </a>
+      </section>
+    )}
+
+    {tab === 'notes' && (
+      notes.length ? (
+        <ul class="panel reveal divide-y divide-line overflow-hidden" style="--i:2" data-list aria-label="Notes">
+          {notes.map((n) => (
+            <Row info={n.info} thumb={n.thumb}>
+              <div slot="body" class="mt-2.5">
+                <p class="notebody" data-note-preview={`${n.type}|${n.id}`}>{n.body}</p>
+                <details class="noteedit mt-2">
+                  <summary class="btn btn-sm btn-ghost -ml-2"><Icon name="PenLine" size={14} />Edit note</summary>
+                  <div class="mt-2"><NotePad client:visible itemType={n.type as 'fact'} itemId={n.id} title={n.info.title.slice(0, 80)} /></div>
+                </details>
+                <p class="mt-1 text-xs text-faint">Edited {ago(n.updatedAt)}</p>
+              </div>
+              <button type="button" class="btn btn-sm btn-ghost !px-2" data-act="del-note" data-type={n.type} data-id={n.id} data-confirm="Delete this note?" aria-label={`Delete note on ${n.id}`} title="Delete note"><Icon name="Trash2" size={15} /></button>
+            </Row>
+          ))}
+        </ul>
+      ) : (
+        <Empty icon="NotebookPen" title="No notes yet" text="Private notes you write on topics, facts and questions collect here. A mnemonic, a doubt, a case you saw: only you can see them.">
+          <a href="/study" class="btn btn-primary"><Icon name="BookOpenText" size={16} />Open a topic</a>
+        </Empty>
+      )
+    )}
+
+    {tab === 'highlights' && (
+      hlGroups.length ? (
+        <div class="space-y-6">
+          {hlGroups.map(([path, list], gi) => (
+            <section class="reveal" style={`--i:${Math.min(gi + 2, 10)}`} aria-label={titles.get(path)}>
+              <h2 class="flex items-center gap-2 text-sm font-medium"><Icon name="FileText" size={15} class="text-faint" /><a href={path} class="min-w-0 truncate hover:text-accent">{titles.get(path)}</a><span class="num text-xs text-faint">{list.length}</span></h2>
+              <ul class="panel mt-2 divide-y divide-line overflow-hidden" data-list>
+                {list.map((h) => (
+                  <li class="hlrow" data-row data-color={h.color}>
+                    <span class="hlbar" aria-hidden="true"></span>
+                    <div class="min-w-0 flex-1">
+                      <blockquote class="hlq"><span class="sr-only">{h.color} highlight: </span>{h.quote}</blockquote>
+                      {h.note && <p class="mt-1.5 flex gap-1.5 text-sm text-muted"><Icon name="StickyNote" size={14} class="mt-[3px] shrink-0" /><span class="whitespace-pre-line">{h.note}</span></p>}
+                      <p class="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-faint">{h.factId && <><a href={`/facts/${h.factId}`} class="num hover:text-accent">{h.factId}</a><span>·</span></>}<span>{ago(h.createdAt)}</span></p>
+                    </div>
+                    <div class="flex shrink-0 items-center">
+                      <a href={`${path}#hl-${h.id}`} class="btn btn-sm btn-ghost">Open<Icon name="ArrowUpRight" size={14} /></a>
+                      <button type="button" class="btn btn-sm btn-ghost !px-2" data-act="del-hl" data-id={h.id} data-confirm="Delete this highlight?" aria-label="Delete highlight" title="Delete highlight"><Icon name="Trash2" size={15} /></button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <Empty icon="Highlighter" title="No highlights yet" text="Select any text in a topic note to highlight it in one of four colours, pin a note to it, or turn it into a flashcard.">
+          <a href="/study" class="btn btn-primary"><Icon name="BookOpenText" size={16} />Open a topic</a>
+        </Empty>
+      )
+    )}
+
+    {tab === 'cards' && (
+      <section aria-label="My cards">
+        {mine.length > 0 && (
+          <div class="reveal mb-3 flex flex-wrap items-center justify-between gap-3" style="--i:2">
+            <p class="text-sm text-muted">Cards you made from highlights. New ones come first in your daily reviews.</p>
+            <a href="/practice/cards" class="btn btn-primary btn-sm"><Icon name="Layers" size={15} />Review now</a>
+          </div>
+        )}
+        {mine.length ? (
+          <ul class="cardgrid" data-list>
+            {mine.map((c, i) => {
+              const [due, tone] = dueText(c.due);
+              return (
+                <li id={`card-U${c.id}`} class="panel ucard reveal" style={`--i:${Math.min(i + 3, 12)}`} data-row data-card={c.id}>
+                  <div class="flex items-center gap-2 text-xs"><span class={`badge ${tone}`}>{due}</span>{c.factId && <a href={`/facts/${c.factId}`} class="num text-faint hover:text-accent">{c.factId}</a>}<span class="ml-auto text-faint">{ago(c.createdAt)}</span></div>
+                  <p class="mt-3 font-medium leading-snug" data-front>{c.front}</p>
+                  <div class="divider my-3"></div>
+                  <p class="text-sm leading-relaxed text-muted" data-back>{c.back}</p>
+                  <div class="mt-auto flex items-center justify-end gap-1 pt-3">
+                    {c.path && <a href={c.path} class="btn btn-sm btn-ghost mr-auto -ml-2 text-muted"><Icon name="CornerUpLeft" size={14} />Source page</a>}
+                    <button type="button" class="btn btn-sm btn-ghost" data-act="edit-card" data-id={c.id}><Icon name="PenLine" size={14} />Edit</button>
+                    <button type="button" class="btn btn-sm btn-ghost !px-2" data-act="del-card" data-id={c.id} data-confirm="Delete this card?" aria-label="Delete card" title="Delete card"><Icon name="Trash2" size={15} /></button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <Empty icon="Layers" title="You haven't made a card yet" text="Select a line in any topic note and choose Flashcard. The card is prefilled from the verified fact, and it joins your daily reviews.">
+            <a href="/study" class="btn btn-primary"><Icon name="BookOpenText" size={16} />Open a topic</a>
+            <a href="/practice/cards" class="btn"><Icon name="Layers" size={16} />Review the deck</a>
+          </Empty>
+        )}
+        <dialog id="card-dlg" class="lb-dialog" aria-labelledby="card-dlg-h">
+          <form data-form="edit-card">
+            <div class="dh"><span class="cico"><Icon name="PenLine" size={18} /></span><h2 id="card-dlg-h" class="font-medium">Edit card</h2></div>
+            <div class="db">
+              <label><span>Front</span><textarea name="front" class="lb-ta" rows="3" required maxlength="1000"></textarea></label>
+              <label><span>Back</span><textarea name="back" class="lb-ta" rows="4" required maxlength="2000"></textarea></label>
+            </div>
+            <div class="df"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Save card</button></div>
+          </form>
+        </dialog>
+      </section>
+    )}
+
+    {tab === 'history' && (
+      days.length ? (
+        <ol class="timeline" aria-label="Activity in the last 30 days">
+          {days.map((d, di) => (
+            <li class="day reveal" style={`--i:${Math.min(di + 2, 10)}`}>
+              <h2 class="dayh"><span class="font-medium">{dayLabel(d.day)}</span><span class="text-xs text-faint">{d.summary}</span></h2>
+              <ol class="entries">
+                {d.entries.map((e) => (
+                  <li class="entry">
+                    <span class="num t">{hhmm(e.at)}</span>
+                    <span class="node" aria-hidden="true"><Icon name={e.kind === 'visit' ? VISIT_ICON[e.v.visitKind] ?? 'Eye' : e.kind === 'mcq' ? 'Target' : 'Layers'} size={14} /></span>
+                    <div class="min-w-0 flex-1">
+                      {e.kind === 'visit' && <p class="truncate">Read <a href={e.v.ref.startsWith('/') ? e.v.ref : '#'} class="text-ink hover:text-accent">{e.v.title}</a></p>}
+                      {e.kind === 'mcq' && (
+                        <details class="fold">
+                          <summary><span>Answered <span class="num">{e.answers.length}</span> MCQ{e.answers.length === 1 ? '' : 's'}</span><span class="text-xs text-faint"><span class="text-ok num">{e.right}</span> right · <span class="text-bad num">{e.wrong}</span> wrong{e.answers.length - e.right - e.wrong > 0 && <> · <span class="num">{e.answers.length - e.right - e.wrong}</span> without a key</>}</span></summary>
+                          <ul class="mt-2 space-y-1.5">
+                            {e.answers.slice(0, 60).map((a) => (
+                              <li class="flex items-start gap-2 text-sm">
+                                <Icon name={a.correct === 1 ? 'Check' : a.correct === 0 ? 'X' : 'Minus'} size={14} class={`mt-1 shrink-0 ${a.correct === 1 ? 'text-ok' : a.correct === 0 ? 'text-bad' : 'text-faint'}`} />
+                                <span class="sr-only">{a.correct === 1 ? 'Right' : a.correct === 0 ? 'Wrong' : 'No key'}:</span>
+                                <a href={`/practice/mcq?q=${encodeURIComponent(a.qid)}`} class="line-clamp-1 min-w-0 text-muted hover:text-ink">{a.stem}</a>
+                                {a.source !== 'bank' && <span class="badge s-neutral">{a.source}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                      {e.kind === 'review' && (
+                        <details class="fold">
+                          <summary>
+                            <span>Reviewed <span class="num">{e.reviews.length}</span> card{e.reviews.length === 1 ? '' : 's'}</span>
+                            <span class="ratebar" role="img" aria-label={e.by.map((n, r) => `${RATING[r + 1]} ${n}`).join(', ')}>{e.by.map((n, r) => n > 0 && <span style={`flex:${n};background:${RATING_C[r + 1]}`}></span>)}</span>
+                          </summary>
+                          <ul class="mt-2 space-y-1.5">
+                            {e.reviews.slice(0, 60).map((r) => <li class="flex items-start gap-2 text-sm"><span class="num w-12 shrink-0 text-xs leading-6" style={`color:${RATING_C[r.rating]}`}>{RATING[r.rating]}</span><span class="line-clamp-1 min-w-0 text-muted">{r.front}</span></li>)}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <Empty icon="History" title="No activity in the last 30 days" text="Topics you read, MCQs you answer and cards you review appear here as a timeline, day by day.">
+          <a href="/practice/cards" class="btn btn-primary"><Icon name="Layers" size={16} />Start a review</a>
+          <a href="/study" class="btn"><Icon name="BookOpenText" size={16} />Browse topics</a>
+        </Empty>
+      )
+    )}
+  </div>
+</App>
+
+<script>
+  import '../../scripts/library';
+</script>
+
+<style>
+  .ltabs { position: sticky; top: 3.75rem; z-index: 10; display: flex; gap: 2px; margin: 1.25rem -0.25rem 0; padding: 3px; overflow-x: auto; scrollbar-width: none; border-radius: 12px; background: color-mix(in oklab, var(--sunk) 88%, transparent); border: 1px solid var(--line); backdrop-filter: blur(12px); }
+  .ltabs::-webkit-scrollbar { display: none; }
+  .lt { position: relative; isolation: isolate; display: inline-flex; flex: none; align-items: center; gap: 0.45rem; height: 2.25rem; padding: 0 0.8rem; border-radius: 9px; font-size: 0.8125rem; color: var(--muted); white-space: nowrap; transition: color var(--d1); }
+  .lt:hover { color: var(--ink); }
+  .lt.on { color: var(--ink); }
+  .lt.on > :global(svg) { color: var(--accent); }
+  .lt-ind { position: absolute; z-index: -1; inset: 0; border-radius: 9px; background: var(--raised); box-shadow: 0 1px 0 var(--line-strong), 0 2px 10px -4px rgb(0 0 0 / 0.45); }
+  .lt-n { min-width: 1.35rem; padding: 0 0.3rem; border-radius: 6px; font-size: 0.6875rem; line-height: 1.25rem; text-align: center; color: var(--muted); background: color-mix(in oklab, var(--ink) 7%, transparent); }
+  .lt.on .lt-n { color: color-mix(in oklab, var(--accent) 75%, var(--ink)); background: var(--glow); }
+  ::view-transition-group(lib-tab) { animation-duration: var(--d3); animation-timing-function: var(--ease); }
+
+  .cico { display: grid; place-items: center; flex: none; width: 2.25rem; height: 2.25rem; border-radius: 11px; background: var(--glow); color: var(--accent); border: 1px solid color-mix(in oklab, var(--accent) 25%, transparent); }
+  .colgrid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); }
+  .newcol, .colcard, .colhint { display: flex; flex-direction: column; padding: 1.15rem 1.2rem; min-height: 13.5rem; }
+  .newcol { border-style: dashed; background: color-mix(in oklab, var(--panel) 70%, transparent); }
+  .colhint { background: radial-gradient(120% 100% at 0% 0%, var(--glow), transparent 55%), var(--panel); }
+  .preview { margin-top: 0.75rem; display: grid; gap: 0.3rem; font-size: 0.8125rem; color: var(--muted); }
+  .preview li { position: relative; padding-left: 0.85rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .preview li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 0.3rem; height: 0.3rem; border-radius: 99px; background: color-mix(in oklab, var(--accent) 55%, var(--line)); }
+  .classlink { display: flex; align-items: center; gap: 0.9rem; padding: 1rem 1.2rem; }
+
+  .notebody { white-space: pre-line; font-size: 0.9375rem; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; padding-left: 0.75rem; border-left: 2px solid color-mix(in oklab, var(--accent) 45%, var(--line)); }
+  .notebody:has(+ .noteedit[open]) { display: none; }
+  .noteedit summary { list-style: none; }
+  .noteedit summary::-webkit-details-marker { display: none; }
+
+  .hlrow { display: flex; align-items: flex-start; gap: 0.9rem; padding: 0.9rem 1rem 0.9rem 0.85rem; --hl: 245 181 68; }
+  .hlrow[data-color="cyan"] { --hl: 34 211 238; } .hlrow[data-color="green"] { --hl: 52 211 153; } .hlrow[data-color="violet"] { --hl: 167 139 250; }
+  .hlbar { align-self: stretch; width: 3px; flex: none; border-radius: 99px; background: rgb(var(--hl)); }
+  .hlq { line-height: 1.6; padding: 0.05rem 0.25rem; margin-left: -0.25rem; border-radius: 4px; background: rgb(var(--hl) / 0.12); -webkit-box-decoration-break: clone; box-decoration-break: clone; display: inline; }
+  @media (max-width: 520px) { .hlrow { flex-wrap: wrap; } .hlrow > .flex.shrink-0 { width: 100%; justify-content: flex-end; margin: -0.3rem -0.4rem -0.4rem 0; } .hlrow > .min-w-0 { flex-basis: calc(100% - 2rem); } }
+
+  .cardgrid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+  .ucard { display: flex; flex-direction: column; padding: 1.1rem 1.2rem 0.85rem; scroll-margin-top: 7rem; }
+  .ucard:target { border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow); }
+
+  .timeline { display: grid; gap: 1.75rem; }
+  .dayh { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--line); }
+  .entries { position: relative; margin-top: 0.4rem; }
+  .entries::before { content: ""; position: absolute; left: 4.3rem; top: 0.9rem; bottom: 0.9rem; width: 1px; background: var(--line); }
+  .entry { position: relative; display: flex; align-items: flex-start; gap: 0.85rem; padding: 0.55rem 0; font-size: 0.9375rem; }
+  .entry .t { width: 2.6rem; flex: none; padding-top: 0.25rem; font-size: 0.75rem; color: var(--faint); text-align: right; }
+  .node { position: relative; z-index: 1; display: grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; border-radius: 99px; background: var(--panel); border: 1px solid var(--line-strong); color: var(--muted); }
+  .entry p { padding-top: 0.15rem; color: var(--muted); }
+  .fold summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem; padding-top: 0.15rem; cursor: pointer; list-style: none; color: var(--muted); }
+  .fold summary::-webkit-details-marker { display: none; }
+  .fold summary:hover { color: var(--ink); }
+  .fold summary::after { content: "Show"; font-size: 0.75rem; color: var(--accent); }
+  .fold[open] summary::after { content: "Hide"; }
+  .ratebar { display: inline-flex; gap: 2px; width: 7rem; height: 0.4rem; border-radius: 99px; overflow: hidden; }
+  .ratebar span { transform-origin: left; animation: growx var(--d4) var(--ease) both 0.2s; }
+  @keyframes growx { from { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .ratebar span { animation: none; } }
+  :global([data-motion="reduced"]) .ratebar span { animation: none; }
+  @media (max-width: 767px) {
+    .ltabs { top: 3.4rem; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); }
+    .entries::before { left: 4.05rem; } .entry .t { width: 2.35rem; }
+  }
+</style>

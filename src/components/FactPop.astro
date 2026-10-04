@@ -1,6 +1,7 @@
 ---
 import Icon from './Icon.astro';
 import Status from './Status.astro';
+import MarkToggle from './MarkToggle.astro';
 import { factById, cardByFact, isEditionClash } from '../lib/data';
 interface Props { id: string }
 const f = factById.get(Astro.props.id);
@@ -19,7 +20,11 @@ const card = f && cardByFact.get(f.id);
     <div id={pid} popover class="factpop panel" style={`position-anchor: --${pid}`}>
       <div class="flex items-center gap-2">
         <span class="num text-xs text-muted">{f.id}</span><Status label={f.label} />{isEditionClash(f) && <Status label="edition" />}
-        <button type="button" class="ml-auto grid h-7 w-7 place-items-center rounded-lg text-muted hover:text-ink" popovertarget={pid} popovertargetaction="hide" aria-label="Close"><Icon name="X" size={16} /></button>
+        <span class="ml-auto flex items-center">
+          <MarkToggle type="fact" id={f.id} compact />
+          <MarkToggle type="fact" id={f.id} kind="weak" compact />
+          <button type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted hover:text-ink" popovertarget={pid} popovertargetaction="hide" aria-label="Close"><Icon name="X" size={16} /></button>
+        </span>
       </div>
       <p class="mt-2 text-[0.9rem] leading-relaxed">{f.fact}</p>
       {f.paperDiffers && <p class="mt-3 rounded-lg bg-signal/10 px-3 py-2 text-sm text-signal"><span class="font-medium">Paper says:</span> {f.paperDiffers}</p>}
@@ -34,7 +39,7 @@ const card = f && cardByFact.get(f.id);
       </dl>
       {f.note && <details class="mt-3 text-sm"><summary class="cursor-pointer text-faint hover:text-muted">Verification note</summary><p class="mt-1.5 text-muted">{f.note}</p></details>}
       <div class="mt-4 flex flex-wrap gap-2">
-        <a href={`/facts?id=${f.id}`} class="btn btn-sm">Open in facts<Icon name="ArrowUpRight" size={14} /></a>
+        <a href={`/facts/${f.id}`} class="btn btn-sm">Open fact page<Icon name="ArrowUpRight" size={14} /></a>
         {card && <a href={`/practice/cards?focus=${f.id}`} class="btn btn-sm btn-ghost"><Icon name="Layers" size={14} />Flashcard</a>}
       </div>
     </div>
