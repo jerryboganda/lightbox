@@ -25,6 +25,6 @@ pnpm-debug.log*
 
 # local
 .env
-data/
+/data/
 test-results/
 playwright-report/
