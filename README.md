@@ -115,7 +115,7 @@ Signed-in users can take their cards and data out of Lightbox. Nothing here is c
   - `mine`: your own cards.
   - `collection:<id>`: a collection you own or one shared with the class. Its facts count, and so do the facts of its topics.
 - **Anki notes:** use the note type "Lightbox (verified card)". The Source and Status fields appear under each answer. Each note's guid is stable per fact, so importing a newer export updates cards instead of duplicating them. Your own cards are labelled "not verified by Lightbox".
-- **`me.json`:** contains your profile basics, marks, collections with their items, notes, highlights, your cards, goals, exams with answers, MCQ attempts, flashcard reviews and study sessions. It never includes other people's data, password hashes or sessions.
+- **`me.json`:** contains your profile basics, marks, collections with their items, notes, highlights, your cards, goals, exams with answers, MCQ attempts, flashcard reviews, study sessions, and your comments, votes, reports, poll votes and AI tutor chats. It never includes other people's data, password hashes or sessions.
 
 The builder (`src/server/anki.ts`) writes a legacy schema-11 `collection.anki2` in memory with better-sqlite3 and zips it with `zlib`. It needs no extra dependencies.
 

@@ -106,7 +106,7 @@ Pick **Anki deck (.apkg)** or **Spreadsheet (.csv)**, then download.
 
 The deck is called `Lightbox::<your choice>`. Each card shows its source and status under the answer. If you import a newer export later, Anki updates the cards you already have instead of adding duplicates. Your own cards are labelled as not verified.
 
-To keep a copy of everything else, go to **Account › Download my data**. You get one JSON file with your bookmarks, collections, notes, highlights, cards, goals, exams, answers, reviews and focus sessions.
+To keep a copy of everything else, go to **Account › Download my data**. You get one JSON file with your bookmarks, collections, notes, highlights, cards, goals, exams, answers, reviews, focus sessions, comments, reports and AI tutor chats.
 
 ## Focus timer and goals
 

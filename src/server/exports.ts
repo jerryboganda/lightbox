@@ -30,9 +30,10 @@ export function resolveScope(uid: number, scope: unknown): { scope: string; labe
       .all(uid, scope === 'weak' ? 'weak' : 'bookmark') as { id: string }[];
     return { scope, label: scope === 'weak' ? 'My weak spots' : 'My bookmarks', refs: usable(ids.map((r) => r.id)) };
   }
-  const [kind, key = ''] = scope.split(':');
+  const [kind, key = '', extra] = scope.split(':');
+  if (extra !== undefined) return null; // the scope is echoed into the filename, so only canonical forms pass
   if (kind === 'system' && bySystem.has(key)) return { scope, label: SYSTEMS[key]?.label ?? key, refs: bySystem.get(key)! };
-  if (kind === 'collection') { const c = getCollection(uid, intId(key)); return c && { scope, label: c.name, refs: usable(itemFacts(c.items)) }; }
+  if (kind === 'collection' && String(intId(key)) === key) { const c = getCollection(uid, intId(key)); return c && { scope, label: c.name, refs: usable(itemFacts(c.items)) }; }
   return null;
 }
 
@@ -121,8 +122,11 @@ export function myData(uid: number) {
     'SELECT id, mode, title, config, items, time_limit timeLimit, started_at startedAt, finished_at finishedAt, score, total FROM exams WHERE user_id = ? ORDER BY started_at, id');
   const answers = all<{ examId: number }>(
     'SELECT a.exam_id examId, a.item_id itemId, a.choice, a.correct, a.flagged, a.ms, a.answered_at answeredAt FROM exam_answers a JOIN exams e ON e.id = a.exam_id WHERE e.user_id = ? ORDER BY a.exam_id, a.answered_at');
+  const chats = all<{ id: number }>('SELECT id, title, context, created_at createdAt, updated_at updatedAt FROM ai_chats WHERE user_id = ? ORDER BY created_at, id');
+  const messages = all<{ chatId: number }>(
+    'SELECT m.chat_id chatId, m.role, m.content, m.cites, m.created_at createdAt FROM ai_messages m JOIN ai_chats c ON c.id = m.chat_id WHERE c.user_id = ? ORDER BY m.chat_id, m.id');
   const group = <T extends Record<K, number>, K extends string>(rows: T[], k: K) => rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map<number, T[]>());
-  const itemsBy = group(colItems, 'cid'), answersBy = group(answers, 'examId');
+  const itemsBy = group(colItems, 'cid'), answersBy = group(answers, 'examId'), messagesBy = group(messages, 'chatId');
   return {
     app: 'Lightbox', exportedAt: new Date().toISOString(), times: 'Unix epoch milliseconds (UTC)',
     profile: db.prepare('SELECT username, display_name displayName, role, created_at createdAt, last_seen_at lastSeenAt FROM users WHERE id = ?').get(uid),
@@ -136,6 +140,11 @@ export function myData(uid: number) {
     mcqAttempts: all('SELECT qid, choice, correct, ms, source, created_at createdAt FROM mcq_attempts WHERE user_id = ? ORDER BY created_at, id'),
     exams: exams.map((e) => ({ ...e, config: JSON.parse(e.config), items: JSON.parse(e.items), answers: (answersBy.get(e.id) ?? []).map(({ examId: _, ...a }) => a) })),
     studySessions: all('SELECT kind, started_at startedAt, seconds FROM study_sessions WHERE user_id = ? ORDER BY started_at, id'),
+    comments: all('SELECT id, item_type itemType, item_id itemId, parent_id parentId, body, created_at createdAt, edited_at editedAt, hidden FROM comments WHERE user_id = ? AND deleted = 0 ORDER BY created_at, id'),
+    votes: all('SELECT item_type type, item_id id, created_at createdAt FROM votes WHERE user_id = ? ORDER BY created_at'),
+    reports: all('SELECT item_type type, item_id id, kind, body, quote, path, status, resolution, created_at createdAt, resolved_at resolvedAt FROM reports WHERE user_id = ? ORDER BY created_at, id'),
+    pollVotes: all('SELECT poll_id pollId, choice, created_at createdAt FROM poll_votes WHERE user_id = ? ORDER BY created_at'),
+    aiChats: chats.map((c) => ({ ...c, messages: (messagesBy.get(c.id) ?? []).map(({ chatId: _, ...m }) => m) })),
   };
 }
 

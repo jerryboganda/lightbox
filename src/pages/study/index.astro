@@ -16,11 +16,11 @@ const rows = systemOrder.map((s) => {
     <div>
       <h1 class="text-2xl font-medium">Study by system</h1>
       <p class="mt-1 text-muted">{topics.length} topic notes across {rows.length} systems. Every line carries its verification status.</p>
-      <p class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+      <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
         <a href="/study/compare" class="tool"><Icon name="Columns3" size={15} />Compare topics side by side</a>
         <a href="/sources" class="tool"><Icon name="ScrollText" size={15} />Read the original pages</a>
         <ExportMenu client:idle scopes={exportScopes(Astro.locals.user!.id).filter((s) => s.scope === 'all' || s.scope.startsWith('system:'))} trigger="Anki decks" className="tool" />
-      </p>
+      </div>
     </div>
     <div class="flex w-full gap-2 sm:w-auto">
     <a href="/facts" class="btn shrink-0"><Icon name="ListFilter" size={16} />Fact explorer</a>

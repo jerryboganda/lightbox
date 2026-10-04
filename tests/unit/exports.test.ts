@@ -113,7 +113,7 @@ describe('anki package', () => {
 
 describe('scopes', () => {
   it('validates the scope and counts each one', () => {
-    for (const bad of ['', 'everything', 'system:', 'system:constructor', 'system:__proto__', 'collection:abc', 'collection:999999', 42, null, 'x'.repeat(41)]) expect(resolveScope(me, bad)).toBeNull();
+    for (const bad of ['', 'everything', 'system:', 'system:constructor', 'system:__proto__', 'collection:abc', 'collection:999999', 'collection:1e0', 'collection:01', 'system:chest:x', 42, null, 'x'.repeat(41)]) expect(resolveScope(me, bad)).toBeNull();
     const list = exportScopes(me);
     expect(list[0]).toEqual({ scope: 'all', label: 'All verified cards', count: 420 });
     expect(list.filter((s) => s.scope.startsWith('system:')).reduce((a, s) => a + s.count, 0)).toBe(420);
@@ -143,6 +143,7 @@ describe('scopes', () => {
     expect(s.refs).toEqual([fact.id, ...fromTopic.filter((id) => id !== fact.id)]);
     expect(exportScopes(me).find((x) => x.scope === scope)).toEqual({ scope, label: 'Viva::cards', count: s.refs.length });
     expect(resolveScope(other, scope)).toBeNull();
+    expect(resolveScope(me, `collection:0${made.id}`)).toBeNull(); // only the canonical id, since the scope names the file
     updateCollection(me, made.id, { shared: true });
     expect(resolveScope(other, scope)!.refs).toEqual(s.refs);
     expect(exportScopes(other).some((x) => x.scope === scope)).toBe(false); // only own collections are listed
@@ -179,6 +180,6 @@ describe('my data', () => {
     expect(d.marks.length).toBe(3);
     expect(json).not.toContain('Their secret');
     expect(json).not.toMatch(/password|"sessions?"|x-other/i);
-    expect(Object.keys(d)).toEqual(['app', 'exportedAt', 'times', 'profile', 'goals', 'marks', 'collections', 'notes', 'highlights', 'cards', 'flashcardReviews', 'mcqAttempts', 'exams', 'studySessions']);
+    expect(Object.keys(d)).toEqual(['app', 'exportedAt', 'times', 'profile', 'goals', 'marks', 'collections', 'notes', 'highlights', 'cards', 'flashcardReviews', 'mcqAttempts', 'exams', 'studySessions', 'comments', 'votes', 'reports', 'pollVotes', 'aiChats']);
   });
 });

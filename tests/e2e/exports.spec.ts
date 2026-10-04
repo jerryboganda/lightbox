@@ -85,6 +85,16 @@ test('download a system deck from its study page', async ({ page }) => {
   expect(apkg.name).toBe('lightbox-system-physics.apkg');
 });
 
+test('the study page deck menu hydrates without a mismatch', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/study');
+  const dlg = await openExport(page, 'Anki decks');
+  await expect(dlg.getByRole('radio', { name: /All verified/ })).toBeChecked();
+  expect(await page.locator('dialog.ex-dialog').count()).toBe(1); // a <dialog> inside a <p> gets split out of the island
+  expect(errors).toEqual([]);
+});
+
 test('download my data as JSON from the account page', async ({ page }) => {
   await page.goto('/account');
   const file = await save(page, () => page.getByRole('link', { name: 'Download my data' }).click());
