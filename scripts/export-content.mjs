@@ -109,6 +109,13 @@ for (const im of images) fs.copyFileSync(path.join(SRC, 'images', im.file), path
 // ---------- ledgers
 const coverage = csv('coverage.csv').map((r) => ({ name: r.name, type: r.type, size: Number(r.size_bytes), units: Number(r.units) || 0, unitKind: r.unit, duplicateOf: r.duplicate_of, inPilot: r.in_pilot === 'yes', done: Number(r.pages_done) || 0, total: Number(r.pages_total) || 0 }));
 const pages = csv('pages.csv').map((r) => ({ file: r.file, page: Number(r.page), status: r.status, textSource: r.text_source, factCount: Number(r.fact_count), note: r.note }));
+// original page text per unit, for the source viewer (server-side only; same naming as the pipeline's text pass)
+const slug = (name) => name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+const pagetext = {};
+for (const p of pages) {
+  const f = path.join(SRC, 'text', `${slug(p.file)}__u${String(p.page).padStart(3, '0')}.txt`);
+  if (fs.existsSync(f)) pagetext[`${p.file}|${p.page}`] = fs.readFileSync(f, 'utf8').replace(/^﻿/, '').trim();
+}
 const dmd = read('disputed.md');
 const unreadable = (dmd.split(/^## 7\..*$/m)[1] || '').split(/^## /m)[0].split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2).trim());
 
@@ -129,11 +136,13 @@ const stats = {
 // sanity: every source row made it through
 const expect = { facts: rawFacts.length, anki: csv('anki.csv').length, images: csv('images.csv').length, mcqs: qs.length };
 for (const [k, v] of Object.entries(expect)) if (stats[k] !== v) throw new Error(`count mismatch for ${k}: ${stats[k]} vs ${v}`);
+const textless = facts.filter((f) => !pagetext[`${f.file}|${f.unit}`]).length;
+if (textless > facts.length * 0.1) throw new Error(`page text missing for ${textless} facts`);
 const orphan = anki.filter((a) => !facts.find((f) => f.id === a.factId));
 if (orphan.length) throw new Error(`anki rows without a fact: ${orphan.length}`);
 
 fs.mkdirSync(OUT, { recursive: true });
 const w = (n, d) => fs.writeFileSync(path.join(OUT, n), JSON.stringify(d, null, 0) + '\n');
 w('facts.json', facts); w('anki.json', anki); w('topics.json', topics); w('mcqs.json', mcqs); w('images.json', images);
-w('coverage.json', coverage); w('pages.json', pages); w('unreadable.json', unreadable); w('stats.json', stats);
-console.log(JSON.stringify(stats));
+w('coverage.json', coverage); w('pages.json', pages); w('unreadable.json', unreadable); w('stats.json', stats); w('pagetext.json', pagetext);
+console.log(JSON.stringify(stats), `pagetext: ${Object.keys(pagetext).length} units, ${textless} facts without text`);

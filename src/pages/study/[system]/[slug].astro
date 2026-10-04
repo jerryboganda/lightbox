@@ -41,7 +41,7 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
             {s.bullets.map((b) => {
               const paper = b.text.startsWith('Paper differs:');
               return (
-                <li class:list={['point', { paper }]}>
+                <li class:list={['point', { paper }]} data-fact={b.ids[0]}>
                   <span class={`dot s-${b.label ?? 'neutral'}`} aria-hidden="true"></span>
                   <div class="min-w-0 flex-1">
                     <p class="max-w-[68ch] leading-relaxed">{paper ? <><span class="font-medium text-signal">Paper differs. </span>{b.text.replace('Paper differs:', '').trim()}</> : b.text}</p>

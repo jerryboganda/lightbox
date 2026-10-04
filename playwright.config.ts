@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4400;
+const PORT = Number(process.env.E2E_PORT) || 4400; // parallel worktrees each take their own port
 export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: false,

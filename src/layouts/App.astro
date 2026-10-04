@@ -3,19 +3,26 @@ import Base from './Base.astro';
 import Icon from '../components/Icon.astro';
 import Logo from '../components/Logo.astro';
 import Palette from '../components/islands/Palette';
+import Highlighter from '../components/islands/Highlighter';
+import StudyTimer from '../components/islands/StudyTimer';
 interface Props { title: string; crumbs?: { label: string; href?: string }[]; wide?: boolean }
 const { title, crumbs = [], wide = false } = Astro.props;
 const user = Astro.locals.user!;
 const path = Astro.url.pathname;
+// group: rail section. TAB_HREFS are the phone tab bar; the rest live under "More".
 const NAV = [
-  { href: '/', label: 'Home', icon: 'LayoutDashboard' },
-  { href: '/study', label: 'Study', icon: 'BookOpenText' },
-  { href: '/facts', label: 'Facts', icon: 'ListFilter' },
-  { href: '/practice', label: 'Practice', icon: 'Target' },
-  { href: '/atlas', label: 'Atlas', icon: 'Images' },
-  { href: '/review', label: 'Review', icon: 'ShieldAlert' },
+  { href: '/', label: 'Home', icon: 'LayoutDashboard', group: 'Learn' },
+  { href: '/study', label: 'Study', icon: 'BookOpenText', group: 'Learn' },
+  { href: '/facts', label: 'Facts', icon: 'ListFilter', group: 'Learn' },
+  { href: '/atlas', label: 'Atlas', icon: 'Images', group: 'Learn' },
+  { href: '/practice', label: 'Practice', icon: 'Target', group: 'Train' },
+  { href: '/analytics', label: 'Analytics', icon: 'ChartNoAxesCombined', group: 'Train' },
+  { href: '/library', label: 'Library', icon: 'Bookmark', group: 'You' },
+  { href: '/review', label: 'Review', icon: 'ShieldAlert', group: 'Check' },
 ];
-const TABS = NAV.filter((n) => n.href !== '/facts');
+const TAB_HREFS = ['/', '/study', '/practice', '/library'];
+const TABS = NAV.filter((n) => TAB_HREFS.includes(n.href));
+const MORE = NAV.filter((n) => !TAB_HREFS.includes(n.href));
 const active = (href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
 const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0, 2).toUpperCase();
 ---
@@ -24,12 +31,13 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
   <div class="shell">
     <aside class="rail" aria-label="Main">
       <a href="/" class="brand" aria-label="Lightbox home"><Logo /><span class="rail-text"><span class="font-medium tracking-tight">Lightbox</span><span class="block text-[11px] text-faint num">FCPS-II radiology</span></span></a>
-      <nav class="mt-6 flex flex-col gap-1">
-        {NAV.map((n) => (
+      <nav class="mt-5 flex flex-col gap-1">
+        {NAV.map((n, i) => (
+          <>{i > 0 && NAV[i - 1].group !== n.group && <span class="rail-group" aria-hidden="true">{n.group}</span>}
           <a href={n.href} class:list={['navlink', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined} title={n.label}>
             {active(n.href) && <span class="nav-ind" transition:name="nav-ind" />}
             <Icon name={n.icon} size={19} /><span class="rail-text">{n.label}</span>
-          </a>
+          </a></>
         ))}
       </nav>
       <div class="mt-auto flex flex-col gap-1">
@@ -57,6 +65,9 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
         <button type="button" class="search" data-open-palette aria-label="Search (Ctrl K)">
           <Icon name="Search" size={16} /><span class="search-text">Search facts, topics, MCQs…</span><span class="kbd search-text">Ctrl K</span>
         </button>
+        <button type="button" class="btn btn-ghost btn-sm !px-2" data-focus-toggle aria-label="Focus mode" aria-pressed="false" title="Focus mode">
+          <span class="fi-off"><Icon name="Maximize2" size={17} /></span><span class="fi-on"><Icon name="Minimize2" size={17} /></span>
+        </button>
         <button type="button" class="btn btn-ghost btn-sm !px-2" data-theme-toggle aria-label="Change theme">
           <span class="ti-sys"><Icon name="MonitorCog" size={18} /></span><span class="ti-light"><Icon name="Sun" size={18} /></span><span class="ti-dark"><Icon name="Moon" size={18} /></span>
         </button>
@@ -81,9 +92,24 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
           <Icon name={n.icon} size={20} /><span>{n.label}</span>
         </a>
       ))}
+      <button type="button" class:list={['tab', { on: MORE.some((n) => active(n.href)) }]} popovertarget="moresheet" aria-label="More pages">
+        {MORE.some((n) => active(n.href)) && <span class="tab-ind" transition:name="tab-ind" />}
+        <Icon name="Ellipsis" size={20} /><span>More</span>
+      </button>
     </nav>
+    <div id="moresheet" popover class="sheet panel">
+      <div class="grid grid-cols-3 gap-2">
+        {MORE.map((n) => (
+          <a href={n.href} class:list={['sheet-item', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined}><Icon name={n.icon} size={20} /><span>{n.label}</span></a>
+        ))}
+        <a href="/account" class:list={['sheet-item', { on: active('/account') }]}><Icon name="Settings2" size={20} /><span>Account</span></a>
+        {user.role === 'admin' && <a href="/admin" class:list={['sheet-item', { on: active('/admin') }]}><Icon name="UsersRound" size={20} /><span>Admin</span></a>}
+      </div>
+    </div>
   </div>
   <Palette client:idle transition:persist isAdmin={user.role === 'admin'} />
+  <Highlighter client:idle transition:persist />
+  <StudyTimer client:idle transition:persist />
 </Base>
 
 <script>
@@ -102,6 +128,15 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
       try { localStorage.setItem('lb-rail', next); } catch {}
     });
     document.querySelectorAll<HTMLElement>('[data-open-palette]').forEach((b) => b.addEventListener('click', openPalette));
+    document.querySelector('#moresheet')?.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('a')) (e.currentTarget as HTMLElement).hidePopover?.(); });
+    const focusBtn = document.querySelector<HTMLElement>('[data-focus-toggle]');
+    focusBtn?.setAttribute('aria-pressed', String(document.documentElement.dataset.focus === 'on'));
+    focusBtn?.addEventListener('click', () => {
+      const d = document.documentElement, on = d.dataset.focus !== 'on';
+      if (on) d.dataset.focus = 'on'; else delete d.dataset.focus;
+      focusBtn.setAttribute('aria-pressed', String(on));
+      try { localStorage.setItem('lb-focus', on ? 'on' : 'off'); } catch {}
+    });
     document.querySelector<HTMLElement>('[data-theme-toggle]')?.addEventListener('click', (ev) => {
       const d = document.documentElement, cur = d.dataset.themePref || 'system';
       const next = THEMES[(THEMES.indexOf(cur) + 1) % 3];
@@ -150,6 +185,14 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
   .menu:popover-open { animation: rise var(--d2) var(--ease); }
   .menuitem { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-radius: 8px; font-size: 0.875rem; color: var(--muted); }
   .menuitem:hover { background: color-mix(in oklab, var(--ink) 6%, transparent); color: var(--ink); }
+  .rail-group { display: block; margin: 0.9rem 0 0.2rem; padding: 0 0.75rem; font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); white-space: nowrap; transition: opacity var(--d2); }
+  [data-rail="collapsed"] .rail-group { opacity: 0; height: 0.4rem; margin: 0.4rem 0; }
+  .fi-on { display: none; } [data-focus="on"] .fi-on { display: inline; } [data-focus="on"] .fi-off { display: none; }
+  .sheet { position: fixed; inset: auto 0.6rem calc(4.6rem + env(safe-area-inset-bottom)) 0.6rem; margin: 0; padding: 0.6rem; color: var(--ink); background: var(--raised); }
+  .sheet:popover-open { animation: rise var(--d2) var(--ease); }
+  .sheet::backdrop { background: rgb(0 0 0 / 0.35); }
+  .sheet-item { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; padding: 0.85rem 0.25rem; border-radius: 12px; font-size: 0.75rem; color: var(--muted); }
+  .sheet-item:hover, .sheet-item.on { background: var(--glow); color: var(--ink); }
   [data-theme-pref="system"] .ti-light, [data-theme-pref="system"] .ti-dark, [data-theme-pref="light"] .ti-sys, [data-theme-pref="light"] .ti-dark, [data-theme-pref="dark"] .ti-sys, [data-theme-pref="dark"] .ti-light { display: none; }
   .content { width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
   .content.wide { max-width: 96rem; }

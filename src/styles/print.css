@@ -1,0 +1,7 @@
+/* Print and "Save as PDF". Owned by the study-depth work; keep print-only rules here. */
+@media print {
+  .rail, .tabs, .topbar, #lb-toasts, [data-no-print] { display: none !important; }
+  .shell { display: block; }
+  .content { max-width: none; padding: 0; }
+  html, body { background: #fff; color: #000; }
+}

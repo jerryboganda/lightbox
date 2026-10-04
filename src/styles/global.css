@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+@import "./print.css";
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
@@ -107,3 +108,18 @@
 ::view-transition-new(page) { animation: scan-in var(--d3) var(--ease) both; }
 @media (prefers-reduced-motion: reduce) { ::view-transition-new(page) { animation: none; } }
 [data-motion="reduced"]::view-transition-new(page) { animation: none; }
+
+/* Toasts (src/scripts/toast.ts) */
+#lb-toasts { position: fixed; z-index: 60; left: 50%; translate: -50% 0; bottom: calc(1.25rem + env(safe-area-inset-bottom)); display: grid; gap: 0.5rem; justify-items: center; pointer-events: none; }
+.lb-toast { padding: 0.6rem 0.95rem; border-radius: 10px; font-size: 0.875rem; background: var(--raised); color: var(--ink); border: 1px solid var(--line-strong); box-shadow: var(--shadow); animation: rise var(--d3) var(--ease); transition: opacity var(--d2), transform var(--d2) var(--ease); }
+.lb-toast.t-ok { border-color: color-mix(in oklab, var(--ok) 45%, transparent); }
+.lb-toast.t-bad { border-color: color-mix(in oklab, var(--bad) 45%, transparent); }
+.lb-toast.out { opacity: 0; transform: translateY(calc(6px * var(--move))); }
+@media (max-width: 767px) { #lb-toasts { bottom: calc(5.25rem + env(safe-area-inset-bottom)); } }
+
+/* Focus mode: chrome steps back, the page narrows to a reading column. */
+[data-focus="on"] .rail, [data-focus="on"] .tabs, [data-focus="on"] .search, [data-focus="on"] .avatar, [data-focus="on"] [data-theme-toggle] { display: none !important; }
+[data-focus="on"] .shell { grid-template-columns: minmax(0, 1fr); }
+[data-focus="on"] .content { max-width: 56rem; }
+[data-focus="on"] .content.wide { max-width: 72rem; }
+[data-focus="on"] .topbar { background: transparent; border-color: transparent; backdrop-filter: none; }

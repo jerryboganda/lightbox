@@ -3,7 +3,7 @@ import { Command } from 'cmdk';
 import MiniSearch from 'minisearch';
 import { AnimatePresence, motion } from 'motion/react';
 import { navigate } from 'astro:transitions/client';
-import { BookOpenText, CircleHelp, FileText, Image, LayoutDashboard, Layers, MoonStar, Search, ShieldAlert, Target, Images, UsersRound, CornerDownLeft } from 'lucide-react';
+import { BookOpenText, Bookmark, ChartNoAxesCombined, CircleHelp, Columns3, FileText, Image, LayoutDashboard, Layers, ListChecks, Maximize2, MoonStar, ScanEye, Search, ShieldAlert, Target, Timer, Images, UsersRound, CornerDownLeft } from 'lucide-react';
 
 type Doc = { id: string; type: 'topic' | 'fact' | 'mcq' | 'image'; title: string; text: string; href: string; label?: string };
 const TYPE = { topic: { icon: BookOpenText, name: 'Topics' }, fact: { icon: FileText, name: 'Facts' }, mcq: { icon: CircleHelp, name: 'MCQs' }, image: { icon: Image, name: 'Atlas' } };
@@ -57,6 +57,14 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
     { label: 'Browse study topics', icon: BookOpenText, run: () => go('/study') },
     { label: 'Open the image atlas', icon: Images, run: () => go('/atlas') },
     { label: 'Open the review centre', icon: ShieldAlert, run: () => go('/review') },
+    { label: 'Open my library', icon: Bookmark, run: () => go('/library') },
+    { label: 'Open analytics', icon: ChartNoAxesCombined, run: () => go('/analytics') },
+    { label: 'Build a custom quiz', icon: ListChecks, run: () => go('/practice/builder') },
+    { label: 'Start a timed exam', icon: Timer, run: () => go('/practice/builder?mode=exam') },
+    { label: 'TOACS station mode', icon: ScanEye, run: () => go('/practice/toacs') },
+    { label: 'Compare topics side by side', icon: Columns3, run: () => go('/study/compare') },
+    { label: 'Browse source pages', icon: FileText, run: () => go('/sources') },
+    { label: 'Toggle focus mode', icon: Maximize2, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-focus-toggle]')?.click(); } },
     { label: 'Change theme', icon: MoonStar, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-theme-toggle]')?.click(); } },
     ...(isAdmin ? [{ label: 'Manage users', icon: UsersRound, run: () => go('/admin') }] : []),
   ];

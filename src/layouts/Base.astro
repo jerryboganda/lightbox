@@ -29,6 +29,7 @@ const { title, description = 'Lightbox: verified FCPS-II radiology study notes, 
           if (m === 'system') delete d.dataset.motion; else d.dataset.motion = m;
           d.dataset.density = get('lb-density', 'comfortable');
           d.dataset.rail = get('lb-rail', 'open');
+          if (get('lb-focus', 'off') === 'on') d.dataset.focus = 'on'; else delete d.dataset.focus;
           const fs = get('lb-fs', '');
           if (fs) d.style.setProperty('--fs', fs + '%');
         };
