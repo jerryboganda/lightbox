@@ -58,7 +58,7 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
         <a href="/" class="mobile-brand" aria-label="Lightbox home"><Logo /></a>
         <nav aria-label="Breadcrumb" class="min-w-0 flex-1">
           <ol class="flex items-center gap-2 text-sm min-w-0">
-            {crumbs.map((c) => <li class="flex items-center gap-2 text-muted shrink-0">{c.href ? <a href={c.href} class="hover:text-ink transition-colors">{c.label}</a> : c.label}<Icon name="ChevronRight" size={14} class="text-faint" /></li>)}
+            {crumbs.map((c) => <li class="flex items-center gap-2 text-muted shrink-0 max-md:hidden">{c.href ? <a href={c.href} class="hover:text-ink transition-colors">{c.label}</a> : c.label}<Icon name="ChevronRight" size={14} class="text-faint" /></li>)}
             <li class="truncate font-medium">{title}</li>
           </ol>
         </nav>

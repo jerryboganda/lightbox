@@ -20,11 +20,12 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
       const t = e.target as HTMLElement;
       if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !/input|textarea|select/i.test(t.tagName) && !t.isContentEditable)) { e.preventDefault(); setOpen((o) => !o); }
     };
-    const onOpen = () => { (window as any).lbPaletteWanted = false; setOpen(true); };
+    // detail.q (or lbPaletteQuery for requests made before hydration) pre-fills the search.
+    const onOpen = (e: Event) => { const w = window as any; w.lbPaletteWanted = false; setOpen(true); setQ((e as CustomEvent).detail?.q ?? w.lbPaletteQuery ?? ''); w.lbPaletteQuery = ''; };
     window.addEventListener('keydown', onKey);
     window.addEventListener('lb:palette', onOpen);
     (window as any).lbPaletteReady = true;
-    if ((window as any).lbPaletteWanted) setOpen(true);
+    if ((window as any).lbPaletteWanted) { setOpen(true); setQ((window as any).lbPaletteQuery ?? ''); (window as any).lbPaletteQuery = ''; }
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('lb:palette', onOpen); };
   }, []);
 
@@ -64,6 +65,7 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
     { label: 'TOACS station mode', icon: ScanEye, run: () => go('/practice/toacs') },
     { label: 'Compare topics side by side', icon: Columns3, run: () => go('/study/compare') },
     { label: 'Browse source pages', icon: FileText, run: () => go('/sources') },
+    { label: 'Start a focus timer', icon: Timer, run: () => { setOpen(false); window.dispatchEvent(new CustomEvent('lb:timer', { detail: 'start' })); } },
     { label: 'Toggle focus mode', icon: Maximize2, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-focus-toggle]')?.click(); } },
     { label: 'Change theme', icon: MoonStar, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-theme-toggle]')?.click(); } },
     ...(isAdmin ? [{ label: 'Manage users', icon: UsersRound, run: () => go('/admin') }] : []),

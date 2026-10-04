@@ -120,19 +120,10 @@ function capture(): Sel | null {
   return { start, end, quote, prefix: s.text.slice(Math.max(0, start - CTX), start), suffix: s.text.slice(end, end + CTX), factId, phone: isPhone() };
 }
 
-// Open the Ctrl K palette with the selection typed in (the palette input is a controlled React field).
+// Open the Ctrl K palette with the selection typed in.
 function searchFor(q: string) {
-  (window as any).lbPaletteWanted = true;
-  window.dispatchEvent(new Event('lb:palette'));
-  const t0 = performance.now();
-  const fill = () => {
-    const input = document.querySelector<HTMLInputElement>('[cmdk-input]');
-    if (input) {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, q);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    } else if (performance.now() - t0 < 4000) requestAnimationFrame(fill);
-  };
-  requestAnimationFrame(fill);
+  Object.assign(window as any, { lbPaletteWanted: true, lbPaletteQuery: q });
+  window.dispatchEvent(new CustomEvent('lb:palette', { detail: { q } }));
 }
 
 const applied = new WeakSet<HTMLElement>();
