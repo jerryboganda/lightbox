@@ -1,0 +1,176 @@
+---
+import Base from './Base.astro';
+import Icon from '../components/Icon.astro';
+import Logo from '../components/Logo.astro';
+import Palette from '../components/islands/Palette';
+interface Props { title: string; crumbs?: { label: string; href?: string }[]; wide?: boolean }
+const { title, crumbs = [], wide = false } = Astro.props;
+const user = Astro.locals.user!;
+const path = Astro.url.pathname;
+const NAV = [
+  { href: '/', label: 'Home', icon: 'LayoutDashboard' },
+  { href: '/study', label: 'Study', icon: 'BookOpenText' },
+  { href: '/facts', label: 'Facts', icon: 'ListFilter' },
+  { href: '/practice', label: 'Practice', icon: 'Target' },
+  { href: '/atlas', label: 'Atlas', icon: 'Images' },
+  { href: '/review', label: 'Review', icon: 'ShieldAlert' },
+];
+const TABS = NAV.filter((n) => n.href !== '/facts');
+const active = (href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
+const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0, 2).toUpperCase();
+---
+<Base title={title}>
+  <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 btn btn-primary">Skip to content</a>
+  <div class="shell">
+    <aside class="rail" aria-label="Main">
+      <a href="/" class="brand" aria-label="Lightbox home"><Logo /><span class="rail-text"><span class="font-medium tracking-tight">Lightbox</span><span class="block text-[11px] text-faint num">FCPS-II radiology</span></span></a>
+      <nav class="mt-6 flex flex-col gap-1">
+        {NAV.map((n) => (
+          <a href={n.href} class:list={['navlink', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined} title={n.label}>
+            {active(n.href) && <span class="nav-ind" transition:name="nav-ind" />}
+            <Icon name={n.icon} size={19} /><span class="rail-text">{n.label}</span>
+          </a>
+        ))}
+      </nav>
+      <div class="mt-auto flex flex-col gap-1">
+        {user.role === 'admin' && (
+          <a href="/admin" class:list={['navlink', { on: active('/admin') }]} title="Admin">
+            {active('/admin') && <span class="nav-ind" transition:name="nav-ind" />}<Icon name="UsersRound" size={19} /><span class="rail-text">Admin</span>
+          </a>
+        )}
+        <a href="/account" class:list={['navlink', { on: active('/account') }]} title="Account">
+          {active('/account') && <span class="nav-ind" transition:name="nav-ind" />}<Icon name="Settings2" size={19} /><span class="rail-text">Account</span>
+        </a>
+        <button type="button" class="navlink rail-toggle" data-rail-toggle title="Collapse sidebar" aria-label="Toggle sidebar"><Icon name="PanelLeft" size={19} /><span class="rail-text">Collapse</span></button>
+      </div>
+    </aside>
+
+    <div class="col">
+      <header class="topbar">
+        <a href="/" class="mobile-brand" aria-label="Lightbox home"><Logo /></a>
+        <nav aria-label="Breadcrumb" class="min-w-0 flex-1">
+          <ol class="flex items-center gap-2 text-sm min-w-0">
+            {crumbs.map((c) => <li class="flex items-center gap-2 text-muted shrink-0">{c.href ? <a href={c.href} class="hover:text-ink transition-colors">{c.label}</a> : c.label}<Icon name="ChevronRight" size={14} class="text-faint" /></li>)}
+            <li class="truncate font-medium">{title}</li>
+          </ol>
+        </nav>
+        <button type="button" class="search" data-open-palette aria-label="Search (Ctrl K)">
+          <Icon name="Search" size={16} /><span class="search-text">Search facts, topics, MCQs…</span><span class="kbd search-text">Ctrl K</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm !px-2" data-theme-toggle aria-label="Change theme">
+          <span class="ti-sys"><Icon name="MonitorCog" size={18} /></span><span class="ti-light"><Icon name="Sun" size={18} /></span><span class="ti-dark"><Icon name="Moon" size={18} /></span>
+        </button>
+        <button type="button" class="avatar" popovertarget="usermenu" aria-label="Account menu">{initials}</button>
+        <div id="usermenu" popover class="menu panel">
+          <div class="px-3 py-2"><div class="font-medium">{user.displayName}</div><div class="text-xs text-muted num">@{user.username} · {user.role}</div></div>
+          <div class="divider my-1"></div>
+          <a href="/account" class="menuitem"><Icon name="Settings2" size={16} />Account and preferences</a>
+          {user.role === 'admin' && <a href="/admin" class="menuitem"><Icon name="UsersRound" size={16} />Admin</a>}
+          <form method="post" action="/api/auth/logout"><button class="menuitem w-full text-left"><Icon name="LogOut" size={16} />Sign out</button></form>
+        </div>
+      </header>
+      <main id="main" transition:name="page" class:list={['content', { wide }]}>
+        <slot />
+      </main>
+    </div>
+
+    <nav class="tabs" aria-label="Main">
+      {TABS.map((n) => (
+        <a href={n.href} class:list={['tab', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined}>
+          {active(n.href) && <span class="tab-ind" transition:name="tab-ind" />}
+          <Icon name={n.icon} size={20} /><span>{n.label}</span>
+        </a>
+      ))}
+    </nav>
+  </div>
+  <Palette client:idle transition:persist isAdmin={user.role === 'admin'} />
+</Base>
+
+<script>
+  const THEMES = ['system', 'light', 'dark'];
+  // The palette island hydrates on idle; remember an early request so the first Ctrl K is never lost.
+  function openPalette() { (window as any).lbPaletteWanted = true; window.dispatchEvent(new Event('lb:palette')); }
+  if (!(window as any).lbPaletteKeys) {
+    (window as any).lbPaletteKeys = true;
+    window.addEventListener('keydown', (e) => { if (e.key === 'k' && (e.metaKey || e.ctrlKey) && !(window as any).lbPaletteReady) { e.preventDefault(); openPalette(); } });
+  }
+  function bind() {
+    document.querySelector('form[action="/api/auth/logout"]')?.addEventListener('submit', () => navigator.serviceWorker?.controller?.postMessage('clear'));
+    document.querySelector('[data-rail-toggle]')?.addEventListener('click', () => {
+      const d = document.documentElement, next = d.dataset.rail === 'collapsed' ? 'open' : 'collapsed';
+      d.dataset.rail = next;
+      try { localStorage.setItem('lb-rail', next); } catch {}
+    });
+    document.querySelectorAll<HTMLElement>('[data-open-palette]').forEach((b) => b.addEventListener('click', openPalette));
+    document.querySelector<HTMLElement>('[data-theme-toggle]')?.addEventListener('click', (ev) => {
+      const d = document.documentElement, cur = d.dataset.themePref || 'system';
+      const next = THEMES[(THEMES.indexOf(cur) + 1) % 3];
+      const commit = () => { try { localStorage.setItem('lb-theme', next); } catch {} (window as any).lbApplyPrefs?.(); };
+      const reduce = d.dataset.motion === 'reduced' || (d.dataset.motion !== 'full' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+      const before = d.dataset.theme;
+      if (!(document as any).startViewTransition || reduce) return commit();
+      const { clientX: x, clientY: y } = ev as MouseEvent;
+      const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      d.classList.add('theme-vt');
+      const t = (document as any).startViewTransition(commit);
+      t.ready.then(() => {
+        if (d.dataset.theme === before) return;
+        d.animate({ clipPath: [`circle(0 at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] }, { duration: 520, easing: 'cubic-bezier(0.16,1,0.3,1)', pseudoElement: '::view-transition-new(root)' });
+      });
+      t.finished.finally(() => d.classList.remove('theme-vt'));
+    });
+  }
+  bind();
+  document.addEventListener('astro:after-swap', bind);
+</script>
+
+<style is:global>
+  .shell { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 100dvh; }
+  .rail { position: sticky; top: 0; height: 100dvh; width: 15.5rem; display: flex; flex-direction: column; padding: 1.1rem 0.75rem; border-right: 1px solid var(--line); background: color-mix(in oklab, var(--panel) 55%, var(--bg)); transition: width var(--d3) var(--ease); overflow: hidden; z-index: 20; }
+  .brand { display: flex; align-items: center; gap: 0.7rem; padding: 0.25rem 0.5rem; }
+  .navlink { position: relative; display: flex; align-items: center; gap: 0.8rem; height: 2.5rem; padding: 0 0.75rem; border-radius: 10px; color: var(--muted); font-size: 0.875rem; font-weight: 450; transition: color var(--d1), background-color var(--d1); white-space: nowrap; }
+  .navlink:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 5%, transparent); }
+  .navlink.on { color: var(--ink); }
+  .navlink > svg { flex: none; position: relative; z-index: 1; }
+  .navlink.on > svg { color: var(--accent); }
+  .navlink .rail-text { position: relative; z-index: 1; }
+  .nav-ind { position: absolute; inset: 0; border-radius: 10px; background: var(--glow); border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent); }
+  ::view-transition-group(nav-ind), ::view-transition-group(tab-ind) { animation-duration: var(--d3); animation-timing-function: var(--ease); }
+  [data-rail="collapsed"] .rail { width: 4.5rem; }
+  [data-rail="collapsed"] .rail .rail-text { opacity: 0; pointer-events: none; }
+  .rail-text { transition: opacity var(--d2); }
+  [data-rail="collapsed"] .rail-toggle svg { transform: scaleX(-1); }
+  .col { min-width: 0; display: flex; flex-direction: column; }
+  .topbar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 0.6rem; height: 3.75rem; padding: 0 1.25rem; border-bottom: 1px solid var(--line); background: color-mix(in oklab, var(--bg) 82%, transparent); backdrop-filter: blur(14px) saturate(1.2); }
+  .search { display: inline-flex; align-items: center; gap: 0.6rem; height: 2.25rem; padding: 0 0.6rem 0 0.75rem; min-width: 18rem; border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); color: var(--faint); font-size: 0.8125rem; transition: border-color var(--d1), color var(--d1); }
+  .search:hover { border-color: var(--line-strong); color: var(--muted); }
+  .search .kbd { margin-left: auto; }
+  .avatar { width: 2.1rem; height: 2.1rem; border-radius: 99px; display: grid; place-items: center; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; background: var(--glow); color: color-mix(in oklab, var(--accent) 65%, var(--ink)); border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent); }
+  .menu { position: fixed; inset: auto; top: 3.4rem; right: 1rem; margin: 0; min-width: 15rem; padding: 0.35rem; color: var(--ink); background: var(--raised); }
+  .menu:popover-open { animation: rise var(--d2) var(--ease); }
+  .menuitem { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem; border-radius: 8px; font-size: 0.875rem; color: var(--muted); }
+  .menuitem:hover { background: color-mix(in oklab, var(--ink) 6%, transparent); color: var(--ink); }
+  [data-theme-pref="system"] .ti-light, [data-theme-pref="system"] .ti-dark, [data-theme-pref="light"] .ti-sys, [data-theme-pref="light"] .ti-dark, [data-theme-pref="dark"] .ti-sys, [data-theme-pref="dark"] .ti-light { display: none; }
+  .content { width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 1.5rem 4rem; }
+  .content.wide { max-width: 96rem; }
+  .mobile-brand { display: none; }
+  .tabs { display: none; }
+  html.theme-vt::view-transition-old(root) { animation: none; }
+  html.theme-vt::view-transition-new(root) { animation: none; }
+
+  @media (max-width: 1100px) { .rail { width: 4.5rem; } .rail .rail-text { opacity: 0; pointer-events: none; } .rail-toggle { display: none; } .search { min-width: 0; } }
+  @media (max-width: 767px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .rail { display: none; }
+    .mobile-brand { display: block; }
+    .topbar { padding: 0 0.9rem; height: 3.4rem; }
+    .search { min-width: 0; width: 2.25rem; padding: 0; justify-content: center; }
+    .search-text { display: none; }
+    .content { padding: 1.1rem 1rem calc(5.5rem + env(safe-area-inset-bottom)); }
+    .tabs { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: color-mix(in oklab, var(--panel) 88%, transparent); backdrop-filter: blur(16px) saturate(1.3); }
+    .tab { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.4rem 0; font-size: 0.6875rem; color: var(--muted); border-radius: 12px; }
+    .tab > * { position: relative; z-index: 1; }
+    .tab.on { color: color-mix(in oklab, var(--accent) 72%, var(--ink)); }
+    .tab-ind { position: absolute !important; inset: 0.1rem 0.5rem; z-index: 0 !important; border-radius: 12px; background: var(--glow); }
+  }
+</style>

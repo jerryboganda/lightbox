@@ -1,0 +1,14 @@
+---
+import App from '../layouts/App.astro';
+import FactsExplorer from '../components/islands/FactsExplorer';
+import { SYSTEMS, systemOrder, topics, stats } from '../lib/data';
+const systems = Object.fromEntries([...systemOrder, 'other'].map((s) => [s, SYSTEMS[s].label]));
+const topicTitles = Object.fromEntries(topics.map((t) => [t.slug, { title: t.title, system: t.system }]));
+---
+<App title="Facts">
+  <header class="reveal mb-5" style="--i:0">
+    <h1 class="text-2xl font-medium">Fact explorer</h1>
+    <p class="mt-1 text-muted">All {stats.facts} facts with their status, source page and the evidence used to check them.</p>
+  </header>
+  <FactsExplorer client:load systems={systems} topicTitles={topicTitles} />
+</App>

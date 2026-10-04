@@ -1,0 +1,177 @@
+---
+import App from '../layouts/App.astro';
+import Icon from '../components/Icon.astro';
+import { facts, mcqs, SYSTEMS, systemOrder, stats, isEditionClash } from '../lib/data';
+import { dashboard } from '../server/progress';
+import { db } from '../server/db';
+
+const user = Astro.locals.user!;
+const d = dashboard(user.id);
+const welcome = Astro.url.searchParams.get('welcome');
+const hour = (new Date().getUTCHours() + 5) % 24;
+const greet = hour < 5 ? 'Late night study' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+const first = user.displayName.split(/\s+/)[0];
+const announcements = db.prepare('SELECT body, created_at FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 2').all() as { body: string; created_at: number }[];
+
+const status = [
+  { key: 'cited', label: 'Cited', n: stats.cited },
+  { key: 'agreed', label: 'Agreed', n: stats.agreed },
+  { key: 'unchecked', label: 'Unchecked', n: stats.unchecked },
+  { key: 'disputed', label: 'Disputed', n: stats.disputed },
+];
+const review = [
+  { label: 'Disputed MCQs', n: stats.mcqVerdicts.DISPUTED, href: '/review#mcqs', c: 's-disputed' },
+  { label: 'Paper vs source', n: facts.filter((f) => f.paperDiffers).length, href: '/review#paper', c: 's-agreed' },
+  { label: 'Edition clashes', n: facts.filter(isEditionClash).length, href: '/review#editions', c: 's-edition' },
+  { label: 'Unchecked facts', n: stats.unchecked, href: '/review#unchecked', c: 's-unchecked' },
+];
+const maxWeek = Math.max(1, ...d.week.map((w) => w.n));
+const quiet = d.week.every((w) => w.n === 0);
+const keyedTotal = mcqs.filter((m) => m.key).length;
+const accuracy = d.mcqKeyed ? Math.round((d.mcqRight / d.mcqKeyed) * 100) : null;
+const corpusPct = stats.pilotFiles / stats.files;
+const R = 30, C = 2 * Math.PI * R;
+const hasDue = d.dueNow + d.newToday > 0;
+---
+<App title="Home">
+  {welcome && <div class="reveal mb-5 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 px-4 py-3 text-sm text-ok" role="status"><Icon name="CircleCheck" size={18} />Password saved. You're all set.</div>}
+
+  <section class="hero reveal" style="--i:0">
+    <div class="min-w-0">
+      <h1 class="text-[1.65rem] font-medium leading-tight sm:text-3xl">{greet}, {first}</h1>
+      <p class="mt-2 text-muted">
+        {hasDue ? <><span class="num text-ink">{d.dueNow}</span> cards due and <span class="num text-ink">{d.newToday}</span> new today</> : 'Nothing due right now. Take a topic or an MCQ set.'}
+        {d.streak > 0 && <> · <span class="text-signal"><span class="num">{d.streak}</span>-day streak</span></>}
+      </p>
+      <div class="mt-5 flex flex-wrap gap-2.5">
+        <a href="/practice/cards" class="btn btn-primary magnetic"><Icon name="Layers" size={17} />{hasDue ? 'Start review' : 'Learn new cards'}</a>
+        <a href="/practice/mcq" class="btn"><Icon name="Target" size={17} />Practise MCQs</a>
+        <a href="/study" class="btn btn-ghost"><Icon name="BookOpenText" size={17} />Browse topics</a>
+      </div>
+    </div>
+    <figure class="activity" aria-label="Your activity over the last 14 days">
+      <div class:list={['flex items-end gap-[5px]', quiet ? 'h-1.5' : 'h-16']}>
+        {d.week.map((w, i) => <span class="bar" style={`--h:${Math.max(0.06, w.n / maxWeek)};--i:${i}`} data-today={i === 13 ? '' : undefined} title={`${w.day}: ${w.n} reviews and answers`}></span>)}
+      </div>
+      <figcaption class="mt-2 flex justify-between text-[11px] text-faint"><span>{quiet ? 'Activity shows here after your first review' : '14 days'}</span><span><span class="num text-muted">{d.reviewsToday}</span> reviews today</span></figcaption>
+    </figure>
+  </section>
+
+  {announcements.length > 0 && (
+    <section class="reveal mt-5 flex flex-col gap-2" style="--i:1" aria-label="Announcements">
+      {announcements.map((a) => <div class="flex items-start gap-3 rounded-xl border border-accent/25 bg-accent/8 px-4 py-3 text-sm"><Icon name="Megaphone" size={17} class="mt-0.5 shrink-0 text-accent" /><p class="whitespace-pre-line">{a.body}</p></div>)}
+    </section>
+  )}
+
+  <div class="bento mt-6">
+    <section class="panel tile col-a reveal" style="--i:2">
+      <header class="tile-h"><h2>Library</h2><a href="/facts" class="tile-link">Explore facts<Icon name="ArrowUpRight" size={15} /></a></header>
+      <p class="mt-1 text-sm text-muted"><span class="num text-ink" data-count={stats.verified}>{stats.verified}</span> of <span class="num">{stats.facts}</span> facts verified, each traced to its file and page.</p>
+      <div class="stack mt-5">
+        {status.map((s, i) => <a href={`/facts?label=${s.key}`} class={`seg-${s.key}`} style={`flex:${Math.max(s.n, 3)};--i:${i}`} title={`${s.label}: ${s.n}`} aria-label={`${s.label} facts: ${s.n}`}></a>)}
+      </div>
+      <ul class="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+        {status.map((s) => <li><a href={`/facts?label=${s.key}`} class="flex items-center justify-between gap-2 rounded-lg px-1.5 py-1 hover:bg-ink/5"><span class={`badge s-${s.key}`}>{s.label}</span><span class="num text-muted">{s.n}</span></a></li>)}
+      </ul>
+      <div class="divider my-5"></div>
+      <div class="flex items-center gap-5">
+        <svg width="76" height="76" viewBox="0 0 76 76" class="shrink-0 -rotate-90" aria-hidden="true">
+          <circle cx="38" cy="38" r={R} fill="none" stroke="var(--line)" stroke-width="7" />
+          <circle cx="38" cy="38" r={R} fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round" stroke-dasharray={C} style={`--off:${C * (1 - corpusPct)};--full:${C}`} class="ring" />
+        </svg>
+        <div class="min-w-0">
+          <div class="text-sm font-medium">Corpus processed</div>
+          <p class="text-sm text-muted"><span class="num text-ink">{stats.pilotFiles}</span> of <span class="num">{stats.files}</span> source files so far (pilot). All <span class="num">{stats.units}</span> pilot pages and slides are done.</p>
+          <a href="/review/pipeline" class="tile-link mt-1">Pipeline explorer<Icon name="ArrowUpRight" size={15} /></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel tile col-b reveal" style="--i:3">
+      <header class="tile-h"><h2>Your mastery by system</h2><span class="text-xs text-faint num">{d.cardsSeen}/{stats.anki} cards started</span></header>
+      <ul class="mt-3 grid gap-x-8 sm:grid-cols-2">
+        {systemOrder.filter((s) => d.mastery[s]).map((s, i) => {
+          const m = d.mastery[s];
+          return (
+            <li>
+              <a href={`/study/${s}`} class="sysrow">
+                <Icon name={SYSTEMS[s].icon} size={17} class="text-muted shrink-0" />
+                <span class="min-w-0 flex-1">
+                  <span class="flex items-baseline justify-between gap-2"><span class="truncate text-sm">{SYSTEMS[s].label}</span><span class="num text-[11px] text-faint">{m.seen}/{m.total}</span></span>
+                  <span class="meter mt-1.5" aria-hidden="true"><span class="m-seen" style={`--w:${m.seen / m.total};--i:${i}`}></span><span class="m-strong" style={`--w:${m.strong / m.total};--i:${i}`}></span></span>
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      <p class="mt-3 flex items-center gap-4 text-[11px] text-faint"><span class="flex items-center gap-1.5"><span class="h-1.5 w-3 rounded-full bg-accent/40"></span>Started</span><span class="flex items-center gap-1.5"><span class="h-1.5 w-3 rounded-full bg-accent"></span>Strong (interval of 7 days or more)</span></p>
+    </section>
+
+    <section class="panel tile col-c reveal" style="--i:4">
+      <header class="tile-h"><h2>Needs your judgement</h2><a href="/review" class="tile-link">Review centre<Icon name="ArrowUpRight" size={15} /></a></header>
+      <ul class="mt-3 divide-y divide-line">
+        {review.map((r) => <li><a href={r.href} class="flex items-center justify-between gap-3 py-2.5 text-sm hover:text-ink text-muted transition-colors"><span class="flex items-center gap-2.5"><span class={`badge ${r.c}`}>{r.n}</span>{r.label}</span><Icon name="ChevronRight" size={16} class="text-faint" /></a></li>)}
+      </ul>
+    </section>
+
+    <section class="panel tile col-d reveal" style="--i:5">
+      <header class="tile-h"><h2>MCQ bank</h2><a href="/practice/mcq" class="tile-link">Practise<Icon name="ArrowUpRight" size={15} /></a></header>
+      <div class="mt-3 grid grid-cols-3 gap-3">
+        <div><div class="num text-2xl" data-count={d.mcqAnswered}>{d.mcqAnswered}</div><div class="text-xs text-muted">answered of {mcqs.length}</div></div>
+        <div><div class="num text-2xl">{accuracy === null ? '–' : <><span data-count={accuracy}>{accuracy}</span>%</>}</div><div class="text-xs text-muted">correct on keyed</div></div>
+        <div><div class="num text-2xl">{keyedTotal}</div><div class="text-xs text-muted">with an answer key</div></div>
+      </div>
+    </section>
+
+    <section class="panel tile col-e reveal" style="--i:6">
+      <header class="tile-h"><h2>{d.recent.length ? 'Continue where you left off' : 'Start here'}</h2></header>
+      <ul class="mt-2 divide-y divide-line">
+        {(d.recent.length ? d.recent.map((r) => ({ href: r.ref, title: r.title, sub: 'Topic note' })) : [
+          { href: '/study/physics', title: 'Physics and safety', sub: `${facts.filter((f) => f.system === 'physics').length} facts, the biggest system` },
+          { href: '/practice/cards', title: 'Your first flashcards', sub: '20 new cards a day, spaced by FSRS' },
+          { href: '/review', title: 'What the papers got wrong', sub: 'Disputed keys and corrected figures' },
+        ]).map((r) => <li><a href={r.href} class="group flex items-center gap-3 py-2.5"><span class="min-w-0 flex-1"><span class="block truncate text-sm group-hover:text-accent transition-colors">{r.title}</span><span class="block truncate text-xs text-faint">{r.sub}</span></span><Icon name="ArrowRight" size={16} class="text-faint transition-transform group-hover:translate-x-0.5" /></a></li>)}
+      </ul>
+    </section>
+  </div>
+</App>
+
+<script>
+  import { countUp, magnetic } from '../scripts/motion';
+  const run = () => { countUp(); magnetic(); };
+  run();
+  document.addEventListener('astro:after-swap', run);
+</script>
+
+<style>
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: end; }
+  .activity { width: 15rem; }
+  .bar { flex: 1; height: 100%; border-radius: 3px 3px 1px 1px; background: color-mix(in oklab, var(--accent) 30%, var(--line)); transform-origin: bottom; transform: scaleY(var(--h)); animation: grow var(--d4) var(--ease) both; animation-delay: calc(var(--i) * 25ms + 150ms); }
+  .bar[data-today] { background: var(--accent); }
+  @keyframes grow { from { transform: scaleY(0); } }
+  .bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; }
+  .tile { padding: 1.25rem 1.35rem; }
+  .tile-h { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .tile-h h2 { font-size: 0.95rem; font-weight: 500; }
+  .tile-link { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1); }
+  .tile-link:hover { color: var(--accent); }
+  .col-a { grid-column: span 5; grid-row: span 2; } .col-b { grid-column: span 7; grid-row: span 2; }
+  .col-c { grid-column: span 4; } .col-d { grid-column: span 4; } .col-e { grid-column: span 4; }
+  .stack { display: flex; gap: 3px; height: 0.75rem; }
+  .stack a { border-radius: 99px; transform-origin: left; animation: growx var(--d4) var(--ease) both; animation-delay: calc(var(--i) * 70ms + 200ms); transition: filter var(--d1); }
+  .stack a:hover { filter: brightness(1.25); }
+  .seg-cited { background: var(--ok); } .seg-agreed { background: var(--accent); } .seg-unchecked { background: var(--signal); } .seg-disputed { background: var(--bad); }
+  @keyframes growx { from { transform: scaleX(0); } }
+  .ring { stroke-dashoffset: var(--off); animation: ring 1.1s var(--ease) both 0.3s; }
+  @keyframes ring { from { stroke-dashoffset: var(--full); } }
+  .sysrow { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.4rem; border-radius: 10px; transition: background-color var(--d1); }
+  .sysrow:hover { background: color-mix(in oklab, var(--ink) 4%, transparent); }
+  .meter { position: relative; display: block; height: 0.375rem; border-radius: 99px; background: var(--sunk); overflow: hidden; }
+  .meter span { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--w)); border-radius: 99px; animation: growx var(--d4) var(--ease) both; animation-delay: calc(var(--i) * 30ms + 250ms); }
+  .m-seen { background: color-mix(in oklab, var(--accent) 40%, transparent); } .m-strong { background: var(--accent); }
+  @media (max-width: 1100px) { .col-a, .col-b { grid-column: span 12; grid-row: auto; } .col-c, .col-d, .col-e { grid-column: span 6; } .col-e { grid-column: span 12; } }
+  @media (max-width: 767px) { .hero { grid-template-columns: 1fr; gap: 1.25rem; } .activity { width: 100%; } .col-c, .col-d, .col-e { grid-column: span 12; } .tile { padding: 1.1rem; } }
+  @media (prefers-reduced-motion: reduce) { .bar, .stack a, .ring, .meter span { animation: none; } }
+  :global([data-motion="reduced"]) :is(.bar, .stack a, .ring, .meter span) { animation: none; }
+</style>

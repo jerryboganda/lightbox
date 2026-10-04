@@ -1,0 +1,49 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import '../styles/global.css';
+interface Props { title: string; description?: string }
+const { title, description = 'Lightbox: verified FCPS-II radiology study notes, practice and review.' } = Astro.props;
+---
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#0b0f14" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f3f6f9" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-180.png" />
+    <title>{title === 'Lightbox' ? title : `${title} · Lightbox`}</title>
+    <script is:inline>
+      (() => {
+        const get = (k, v) => { try { return localStorage.getItem(k) || v; } catch { return v; } };
+        const apply = (doc = document) => {
+          const d = doc.documentElement, pref = get('lb-theme', 'system');
+          const dark = pref === 'dark' || (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          d.dataset.theme = dark ? 'dark' : 'light';
+          d.dataset.themePref = pref;
+          const m = get('lb-motion', 'system');
+          if (m === 'system') delete d.dataset.motion; else d.dataset.motion = m;
+          d.dataset.density = get('lb-density', 'comfortable');
+          d.dataset.rail = get('lb-rail', 'open');
+          const fs = get('lb-fs', '');
+          if (fs) d.style.setProperty('--fs', fs + '%');
+        };
+        apply();
+        window.lbApplyPrefs = apply;
+        document.addEventListener('astro:before-swap', (e) => apply(e.newDocument));
+        matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply());
+      })();
+    </script>
+    <ClientRouter fallback="swap" />
+    <script is:inline>
+      if ('serviceWorker' in navigator && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

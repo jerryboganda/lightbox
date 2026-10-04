@@ -1,0 +1,54 @@
+{
+  "name": "lightbox",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "test": "vitest run",
+    "export-content": "node scripts/export-content.mjs",
+    "e2e": "playwright test",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.6",
+    "@astrojs/react": "^7.0.0",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@lucide/astro": "^1.52.0",
+    "@node-rs/argon2": "^2.2.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "astro": "^7.3.5",
+    "better-sqlite3": "^13.0.3",
+    "cmdk": "^1.1.1",
+    "idb-keyval": "^6.3.0",
+    "lucide-react": "^1.52.0",
+    "minisearch": "^7.2.0",
+    "motion": "^14.0.0",
+    "photoswipe": "^5.4.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "ts-fsrs": "^5.4.2"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "better-sqlite3": true,
+    "sharp": true
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  }
+}

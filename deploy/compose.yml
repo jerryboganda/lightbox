@@ -1,0 +1,35 @@
+name: lightbox
+services:
+  web:
+    image: ghcr.io/jerryboganda/lightbox:${TAG:-latest}
+    container_name: lightbox-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/lightbox.db
+      HOST: 0.0.0.0
+      PORT: "4321"
+    volumes:
+      - ./data:/data
+    networks: [platform]
+    mem_limit: 512m
+
+  backup:
+    image: ghcr.io/jerryboganda/lightbox:${TAG:-latest}
+    container_name: lightbox-backup
+    restart: unless-stopped
+    command: ["node", "deploy/backup.mjs"]
+    environment:
+      DB_PATH: /data/lightbox.db
+      BACKUP_DIR: /backups
+      KEEP_DAYS: "14"
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    network_mode: none
+    mem_limit: 128m
+
+# Nginx Proxy Manager already lives on this network; it forwards lightbox.polytronx.com to lightbox-web:4321.
+networks:
+  platform:
+    external: true

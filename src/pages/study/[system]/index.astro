@@ -1,0 +1,40 @@
+---
+import App from '../../../layouts/App.astro';
+import Icon from '../../../components/Icon.astro';
+import { factById, topics, SYSTEMS } from '../../../lib/data';
+
+const { system } = Astro.params;
+const meta = SYSTEMS[system!];
+if (!meta) return Astro.redirect('/study');
+const list = topics.filter((t) => t.system === system).map((t) => {
+  const ids = [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))];
+  const labels = ids.map((id) => factById.get(id)?.label).filter(Boolean) as string[];
+  return { t, n: ids.length, labels, open: labels.filter((l) => l === 'unchecked' || l === 'disputed').length };
+}).sort((a, b) => a.t.title.localeCompare(b.t.title));
+---
+<App title={meta.label} crumbs={[{ label: 'Study', href: '/study' }]}>
+  <header class="reveal flex items-start gap-4" style="--i:0">
+    <span class="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent"><Icon name={meta.icon} size={24} /></span>
+    <div>
+      <h1 class="text-2xl font-medium">{meta.label}</h1>
+      <p class="mt-1 text-muted">{meta.blurb}. <span class="num">{list.length}</span> topics, <span class="num">{list.reduce((a, x) => a + x.n, 0)}</span> linked facts.</p>
+    </div>
+  </header>
+  <ul class="mt-6 grid gap-3 md:grid-cols-2">
+    {list.map(({ t, n, labels, open }, i) => (
+      <li class="reveal" style={`--i:${Math.min(i + 1, 14)}`}>
+        <a href={`/study/${system}/${t.slug}`} class="panel lift press group flex h-full flex-col gap-2 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <h2 class="font-medium leading-snug group-hover:text-accent transition-colors">{t.title}</h2>
+            <Icon name="ArrowUpRight" size={16} class="mt-1 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          </div>
+          <p class="line-clamp-2 text-sm text-muted">{t.oneLiner}</p>
+          <div class="mt-auto flex items-center gap-2 pt-1">
+            <span class="flex gap-1" aria-hidden="true">{labels.slice(0, 18).map((l) => <span class={`h-1.5 w-1.5 rounded-full s-${l}`} style="background: var(--c)"></span>)}</span>
+            <span class="num ml-auto text-xs text-faint">{n} facts{open > 0 && <span class="text-signal"> · {open} open</span>}</span>
+          </div>
+        </a>
+      </li>
+    ))}
+  </ul>
+</App>

@@ -1,0 +1,84 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import { coverage, pages, stats } from '../../lib/data';
+
+const types = [...new Set(coverage.map((c) => c.type))].sort();
+const unitsOf = new Map<string, typeof pages>();
+for (const p of pages) (unitsOf.get(p.file) ?? unitsOf.set(p.file, []).get(p.file)!).push(p);
+const rows = [...coverage].sort((a, b) => Number(b.total > 0) - Number(a.total > 0) || b.units - a.units);
+const fmtSize = (b: number) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`);
+const metrics = [
+  { n: stats.files, l: 'files in the corpus' },
+  { n: stats.pdfPages, l: 'PDF pages' },
+  { n: stats.slides, l: 'slides' },
+  { n: stats.duplicates, l: 'byte-identical duplicates' },
+  { n: stats.pilotFiles, l: 'files processed (pilot)' },
+  { n: stats.units, l: 'pilot pages and slides done' },
+];
+---
+<App title="Pipeline" crumbs={[{ label: 'Review', href: '/review' }]} wide>
+  <header class="reveal" style="--i:0">
+    <h1 class="text-2xl font-medium">Pipeline explorer</h1>
+    <p class="mt-1 max-w-3xl text-muted">Where every fact comes from. The pilot processed {stats.pilotFiles} files page by page; the rest of the folder is inventoried and waiting.</p>
+  </header>
+  <dl class="reveal mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6" style="--i:1">
+    {metrics.map((m) => <div class="panel px-4 py-3.5"><dd class="num text-2xl" data-count={m.n}>{m.n}</dd><dt class="text-xs text-muted">{m.l}</dt></div>)}
+  </dl>
+
+  <div class="reveal mt-6 flex flex-wrap items-center gap-2" style="--i:2">
+    <label class="relative w-full sm:w-72"><span class="sr-only">Search files</span><Icon name="Search" size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input class="field pl-9" placeholder="Search file names" data-q /></label>
+    <button type="button" class="chip" aria-pressed="true" data-t="">All types</button>
+    {types.map((t) => <button type="button" class="chip" aria-pressed="false" data-t={t}>{t.toUpperCase()}</button>)}
+    <button type="button" class="chip" aria-pressed="false" data-pilot>Pilot only</button>
+    <button type="button" class="chip" aria-pressed="false" data-dup>Hide duplicates</button>
+    <span class="num ml-auto text-sm text-muted" data-count-out></span>
+  </div>
+
+  <ul class="panel mt-4 divide-y divide-line" data-rows>
+    {rows.map((c) => {
+      const u = unitsOf.get(c.name) ?? [];
+      return (
+        <li data-type={c.type} data-pilot={c.total > 0 ? '1' : ''} data-dup={c.duplicateOf ? '1' : ''} data-name={c.name.toLowerCase()} class="px-4 py-3">
+          <div class="flex items-center gap-3">
+            <span class="badge s-neutral w-12 justify-center uppercase">{c.type}</span>
+            <span class="min-w-0 flex-1"><span class="block truncate text-sm" title={c.name}>{c.name}</span><span class="block text-xs text-faint"><span class="num">{c.units}</span> {c.unitKind || 'units'} · {fmtSize(c.size)}{c.duplicateOf && <> · duplicate of <span class="text-muted">{c.duplicateOf}</span></>}</span></span>
+            {c.total > 0 ? <span class="badge s-cited">pilot · {c.done}/{c.total}</span> : <span class="text-xs text-faint max-sm:hidden">queued</span>}
+          </div>
+          {u.length > 0 && (
+            <div class="mt-2.5 flex flex-wrap gap-[3px] pl-[3.75rem]" aria-label={`${u.filter((x) => x.status === 'facts').length} of ${u.length} units have facts`}>
+              {u.sort((a, b) => a.page - b.page).map((p) => <span class:list={['unit', { yes: p.status === 'facts' }]} title={`${p.status === 'facts' ? `${p.factCount} facts` : 'Nothing examinable'} · unit ${p.page}${p.note ? ' · ' + p.note : ''}`}></span>)}
+            </div>
+          )}
+        </li>
+      );
+    })}
+  </ul>
+</App>
+
+<script>
+  import { countUp } from '../../scripts/motion';
+  function init() {
+    countUp();
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-rows] > li')];
+    if (!rows.length) return;
+    let t = '', pilot = false, dup = false, q = '';
+    const out = document.querySelector('[data-count-out]')!;
+    const apply = () => {
+      let n = 0;
+      for (const r of rows) { const show = (!t || r.dataset.type === t) && (!pilot || r.dataset.pilot) && (!dup || !r.dataset.dup) && (!q || r.dataset.name!.includes(q)); r.hidden = !show; if (show) n++; }
+      out.textContent = `${n} files`;
+    };
+    document.querySelectorAll<HTMLElement>('[data-t]').forEach((b) => b.addEventListener('click', () => { t = b.dataset.t!; document.querySelectorAll('[data-t]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); apply(); }));
+    const tog = (sel: string, f: (v: boolean) => void) => { const b = document.querySelector<HTMLElement>(sel)!; b.addEventListener('click', () => { const v = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(v)); f(v); apply(); }); };
+    tog('[data-pilot]', (v) => (pilot = v)); tog('[data-dup]', (v) => (dup = v));
+    document.querySelector<HTMLInputElement>('[data-q]')!.addEventListener('input', (e) => { q = (e.target as HTMLInputElement).value.trim().toLowerCase(); apply(); });
+    apply();
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+<style>
+  .unit { width: 0.6rem; height: 0.6rem; border-radius: 2px; background: var(--line); }
+  .unit.yes { background: var(--accent); }
+</style>

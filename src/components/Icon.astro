@@ -1,0 +1,7 @@
+---
+import * as L from '@lucide/astro';
+interface Props { name: string; size?: number; class?: string; 'stroke-width'?: number }
+const { name, size = 18, class: cls, 'stroke-width': sw = 1.75 } = Astro.props;
+const C = (L as Record<string, any>)[name] ?? L.Circle;
+---
+<C size={size} stroke-width={sw} class={cls} aria-hidden="true" />

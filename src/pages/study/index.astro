@@ -1,0 +1,78 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import { facts, topics, SYSTEMS, systemOrder } from '../../lib/data';
+
+const rows = systemOrder.map((s) => {
+  const fs = facts.filter((f) => f.system === s);
+  const n = (l: string) => fs.filter((f) => f.label === l).length;
+  return { s, meta: SYSTEMS[s], topics: topics.filter((t) => t.system === s).length, facts: fs.length, cited: n('cited'), agreed: n('agreed'), unchecked: n('unchecked') + n('disputed') };
+}).filter((r) => r.topics).sort((a, b) => b.facts - a.facts);
+---
+<App title="Study">
+  <header class="reveal flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" style="--i:0">
+    <div>
+      <h1 class="text-2xl font-medium">Study by system</h1>
+      <p class="mt-1 text-muted">{topics.length} topic notes across {rows.length} systems. Every line carries its verification status.</p>
+    </div>
+    <div class="flex w-full gap-2 sm:w-auto">
+    <a href="/facts" class="btn shrink-0"><Icon name="ListFilter" size={16} />Fact explorer</a>
+    <label class="relative w-full sm:w-72">
+      <span class="sr-only">Filter topics</span>
+      <Icon name="Search" size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+      <input class="field pl-9" placeholder="Filter 183 topics" data-filter />
+    </label>
+    </div>
+  </header>
+
+  <ul class="sysgrid mt-6" data-systems>
+    {rows.map((r, i) => (
+      <li class="reveal" style={`--i:${i + 1}`}>
+        <a href={`/study/${r.s}`} class="panel lift press group flex h-full flex-col p-5">
+          <div class="flex items-start justify-between gap-3">
+            <span class="grid h-10 w-10 place-items-center rounded-xl bg-accent/10 text-accent transition-colors group-hover:bg-accent/18"><Icon name={r.meta.icon} size={20} /></span>
+            <span class="num text-xs text-faint">{r.topics} topics</span>
+          </div>
+          <h2 class="mt-4 font-medium">{r.meta.label}</h2>
+          <p class="mt-0.5 text-sm text-muted">{r.meta.blurb}</p>
+          <div class="mt-auto pt-5">
+            <div class="flex h-1.5 gap-[2px] overflow-hidden rounded-full" aria-hidden="true">
+              <span class="bg-ok" style={`flex:${r.cited}`}></span><span class="bg-accent" style={`flex:${r.agreed}`}></span><span class="bg-signal" style={`flex:${r.unchecked}`}></span>
+            </div>
+            <p class="mt-2 text-xs text-faint"><span class="num text-muted">{r.facts}</span> facts · <span class="num">{r.cited}</span> cited · <span class="num">{r.agreed}</span> agreed{r.unchecked > 0 && <> · <span class="num">{r.unchecked}</span> open</>}</p>
+          </div>
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  <section class="mt-8 hidden" data-results aria-live="polite">
+    <h2 class="text-sm font-medium text-muted">Matching topics</h2>
+    <ul class="mt-2 divide-y divide-line panel px-2" data-list>
+      {topics.map((t) => <li data-t={`${t.title} ${t.oneLiner} ${SYSTEMS[t.system]?.label}`.toLowerCase()} class="hidden"><a href={`/study/${t.system}/${t.slug}`} class="flex items-center gap-3 rounded-lg px-3 py-3 hover:bg-ink/5"><span class="min-w-0 flex-1"><span class="block truncate">{t.title}</span><span class="block truncate text-xs text-faint">{SYSTEMS[t.system]?.label} · {t.oneLiner}</span></span><Icon name="ArrowRight" size={16} class="text-faint" /></a></li>)}
+    </ul>
+    <p class="mt-3 hidden text-sm text-muted" data-none>No topic matches. Try the search palette (Ctrl K) to search inside facts.</p>
+  </section>
+</App>
+
+<script>
+  function init() {
+    const input = document.querySelector<HTMLInputElement>('[data-filter]');
+    if (!input) return;
+    const results = document.querySelector('[data-results]')!, sys = document.querySelector('[data-systems]')!, none = document.querySelector('[data-none]')!;
+    const items = [...document.querySelectorAll<HTMLElement>('[data-list] li')];
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      results.classList.toggle('hidden', !q); sys.classList.toggle('hidden', !!q);
+      let n = 0;
+      for (const li of items) { const hit = !!q && q.split(/\s+/).every((w) => li.dataset.t!.includes(w)); li.classList.toggle('hidden', !hit); if (hit) n++; }
+      none.classList.toggle('hidden', n > 0 || !q);
+    });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .sysgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 1rem; }
+</style>

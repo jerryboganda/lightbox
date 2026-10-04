@@ -1,0 +1,124 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Status from '../../components/Status.astro';
+import { facts, mcqs, unreadable, isEditionClash } from '../../lib/data';
+
+const disputedMcqs = mcqs.filter((m) => m.verdict === 'DISPUTED');
+const open = facts.filter((f) => f.status === 'disputed');
+const paper = facts.filter((f) => f.paperDiffers);
+const editions = facts.filter(isEditionClash);
+const unchecked = facts.filter((f) => f.status === 'unchecked');
+const notBlind = mcqs.filter((m) => m.notBlind);
+const nbByPaper = Object.entries(notBlind.reduce((a, m) => ((a[m.paper] ??= []).push(m), a), {} as Record<string, typeof notBlind>));
+const urls = (s: string) => s.match(/https?:\/\/[^\s;,)]+/g) || [];
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+const NAV = [
+  ['mcqs', 'Disputed MCQs', disputedMcqs.length, 's-disputed'],
+  ['open', 'Open disputes', open.length, 's-disputed'],
+  ['paper', 'Paper vs source', paper.length, 's-agreed'],
+  ['editions', 'Edition clashes', editions.length, 's-edition'],
+  ['unchecked', 'Unchecked', unchecked.length, 's-unchecked'],
+  ['notblind', 'Not blind', notBlind.length, 's-neutral'],
+  ['unreadable', 'Unreadable', unreadable.length, 's-neutral'],
+] as const;
+---
+<App title="Review centre">
+  <header class="reveal" style="--i:0">
+    <h1 class="text-2xl font-medium">Review centre</h1>
+    <p class="mt-1 max-w-3xl text-muted">Everything that needs your judgement: keys that can't be settled, figures where the papers differ from the sources, and what is still unverified.</p>
+  </header>
+  <nav class="reveal sticky top-[3.75rem] z-10 -mx-1 mt-5 flex gap-2 overflow-x-auto bg-bg/85 px-1 py-2 backdrop-blur-md max-md:top-[3.4rem]" style="--i:1" aria-label="Sections">
+    {NAV.map(([id, label, n, c]) => <a href={`#${id}`} class="chip shrink-0"><span class={`badge ${c} !py-0.5`}>{n}</span>{label}</a>)}
+    <a href="/review/pipeline" class="chip ml-auto shrink-0"><Icon name="Workflow" size={14} />Pipeline</a>
+  </nav>
+
+  <section id="mcqs" class="sec">
+    <h2>Disputed MCQs</h2>
+    <p class="lede">These questions are defective, so no source can pick a single answer. Learn both positions.</p>
+    <div class="mt-4 grid gap-3 lg:grid-cols-2">
+      {disputedMcqs.map((m) => (
+        <article class="panel flex flex-col p-5">
+          <div class="flex items-center gap-2 text-xs text-faint"><span class="num">{m.qid}</span><span class="badge s-disputed">Disputed</span></div>
+          <p class="mt-2 font-medium leading-snug">{m.stem}</p>
+          <ul class="mt-3 space-y-1 text-sm">
+            {Object.entries(m.options).map(([l, t]) => <li class:list={['flex gap-2 rounded-lg px-2 py-1', { 'bg-signal/10': l === m.key, 'bg-accent/10': l === m.myAnswer && l !== m.key }]}><span class="num w-4 text-faint">{l}</span><span class="flex-1">{t}</span>{l === m.key && <span class="text-xs text-signal">key</span>}{l === m.myAnswer && <span class="text-xs text-accent">Lightbox</span>}</li>)}
+          </ul>
+          <p class="mt-3 text-sm text-muted">{m.note}</p>
+          <div class="mt-auto flex flex-wrap items-center gap-2 pt-4">
+            {urls(m.evidence).slice(0, 3).map((u) => <a href={u} target="_blank" rel="noopener noreferrer" class="chip"><Icon name="ExternalLink" size={13} />{host(u)}</a>)}
+            <a href={`/practice/mcq?q=${m.qid}`} class="btn btn-sm ml-auto">Try it<Icon name="ArrowRight" size={14} /></a>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section id="open" class="sec">
+    <h2>Open disputes</h2>
+    <p class="lede">The paper's version is kept next to the verified one.</p>
+    <ul class="mt-4 space-y-3">{open.map((f) => <li class="panel p-5"><div class="flex flex-wrap items-center gap-2 text-xs text-faint"><span class="num">{f.id}</span><Status label={f.label} /><span>{f.file} p{f.unit}</span></div><p class="mt-2 leading-relaxed">{f.fact}</p><p class="mt-2 text-sm text-muted">{f.note}</p></li>)}</ul>
+  </section>
+
+  <section id="paper" class="sec">
+    <h2>Paper vs source, resolved</h2>
+    <p class="lede">The cited value is the fact. What the paper printed is shown so you don't learn it by mistake.</p>
+    <ul class="mt-4 grid gap-3 lg:grid-cols-2">
+      {paper.map((f) => (
+        <li class="panel flex flex-col p-5">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-faint"><span class="num">{f.id}</span><Status label={f.label} />{isEditionClash(f) && <Status label="edition" />}</div>
+          <p class="mt-2 leading-relaxed">{f.fact}</p>
+          <p class="mt-3 rounded-lg bg-signal/10 px-3 py-2 text-sm text-signal"><span class="font-medium">Paper says:</span> {f.paperDiffers}</p>
+          <div class="mt-auto flex flex-wrap gap-2 pt-3">{f.sources.slice(0, 3).map((u) => <a href={u} target="_blank" rel="noopener noreferrer" class="chip"><Icon name="ExternalLink" size={13} />{host(u)}</a>)}</div>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section id="editions" class="sec">
+    <h2>Edition clashes</h2>
+    <p class="lede">An older text and a newer guideline disagree. Both are kept; name the system you're quoting in the exam.</p>
+    <ul class="mt-4 divide-y divide-line panel">{editions.map((f) => <li class="p-5"><div class="flex flex-wrap items-center gap-2 text-xs text-faint"><span class="num">{f.id}</span><Status label="edition" /><Status label={f.label} /></div><p class="mt-2 font-medium text-edition">{f.edition}</p><p class="mt-1 text-sm text-muted">{f.fact}</p></li>)}</ul>
+  </section>
+
+  <section id="unchecked" class="sec">
+    <h2>Unchecked facts</h2>
+    <p class="lede">No acceptable source was found. They stay visible but are never shown as verified or turned into flashcards.</p>
+    <ul class="mt-4 divide-y divide-line panel">
+      {unchecked.map((f) => (
+        <li class="px-5 py-3.5">
+          <details class="group">
+            <summary class="flex cursor-pointer list-none items-start gap-3"><span class="mt-[0.55rem] h-1.5 w-1.5 shrink-0 rounded-full bg-signal"></span><span class="min-w-0 flex-1"><span class="block leading-relaxed">{f.fact}</span><span class="mt-0.5 block text-xs text-faint"><span class="num">{f.id}</span> · {f.file} p{f.unit}</span></span><Icon name="ChevronDown" size={16} class="mt-1 shrink-0 text-faint transition-transform group-open:rotate-180" /></summary>
+            <p class="mt-2 pl-5 text-sm text-muted">{f.note || 'No note recorded.'}</p>
+          </details>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section id="notblind" class="sec">
+    <h2>Not answered blind</h2>
+    <p class="lede">The source printed the answer next to these questions, or gave no key, so Lightbox could not answer them before seeing the key. Treat them as recall practice.</p>
+    <div class="mt-4 grid gap-3 md:grid-cols-2">
+      {nbByPaper.map(([p, list]) => (
+        <details class="panel p-5">
+          <summary class="flex cursor-pointer list-none items-center justify-between"><span class="font-medium">{p === 'FEB2025' ? 'IMM Feb 2025' : 'IMM Aug 2025'}</span><span class="badge s-neutral">{list.length}</span></summary>
+          <ul class="mt-3 max-h-80 space-y-2 overflow-y-auto pr-2 text-sm">{list.map((m) => <li class="flex gap-2"><a href={`/practice/mcq?q=${m.qid}`} class="num shrink-0 text-faint hover:text-accent">{m.qid.split('-')[1]}</a><span class="text-muted">{m.stem.slice(0, 120)}{m.stem.length > 120 ? '…' : ''}</span></li>)}</ul>
+        </details>
+      ))}
+    </div>
+  </section>
+
+  <section id="unreadable" class="sec">
+    <h2>Partly unreadable source text</h2>
+    <p class="lede">Where the page pixels don't carry the text, the best-effort reading is kept and flagged here.</p>
+    <ul class="mt-4 space-y-2 text-sm text-muted">{unreadable.map((u) => <li class="flex gap-2"><Icon name="ScanEye" size={16} class="mt-0.5 shrink-0 text-faint" />{u}</li>)}</ul>
+  </section>
+</App>
+
+<style>
+  .sec { scroll-margin-top: 8rem; margin-top: 2.75rem; }
+  .sec h2 { font-size: 1.15rem; font-weight: 500; }
+  .lede { margin-top: 0.25rem; max-width: 70ch; color: var(--muted); font-size: 0.9rem; }
+  summary::-webkit-details-marker { display: none; }
+</style>

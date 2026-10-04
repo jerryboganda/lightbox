@@ -1,0 +1,83 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+import Icon from '../components/Icon.astro';
+import { stats } from '../lib/data';
+if (Astro.locals.user) return Astro.redirect('/');
+const p = Astro.url.searchParams;
+const error = p.get('error'), next = p.get('next') || '', u = p.get('u') || '';
+const figures = [
+  { n: stats.verified, l: 'verified facts' },
+  { n: stats.anki, l: 'flashcards' },
+  { n: stats.topics, l: 'topic notes' },
+  { n: stats.images, l: 'atlas images' },
+];
+---
+<Base title="Sign in">
+  <main class="login">
+    <section class="box" aria-hidden="true">
+      <div class="grid-lines"></div>
+      <div class="beam"></div>
+      <div class="relative z-10 flex h-full flex-col justify-between p-8 sm:p-10">
+        <div class="flex items-center gap-3"><Logo size={34} /><span class="text-lg font-medium tracking-tight">Lightbox</span></div>
+        <div>
+          <p class="max-w-md text-[2rem] leading-[1.15] font-medium tracking-tight sm:text-[2.6rem]">Every fact checked, sourced and ready for the FCPS-II viva.</p>
+          <dl class="mt-8 grid max-w-md grid-cols-2 gap-x-8 gap-y-5">
+            {figures.map((f, i) => (
+              <div class="reveal" style={`--i:${i + 2}`}><dt class="sr-only">{f.l}</dt><dd class="num text-3xl text-accent" data-count={f.n}>{f.n}</dd><dd class="text-sm text-muted">{f.l}</dd></div>
+            ))}
+          </dl>
+        </div>
+        <p class="text-xs text-faint">IMM past papers and TOACS, verified against Radiopaedia, PMC and guidelines.</p>
+      </div>
+    </section>
+
+    <section class="form-col">
+      <form method="post" action="/api/auth/login" class="w-full max-w-sm reveal" style="--i:1">
+        <h1 class="text-2xl font-medium">Sign in</h1>
+        <p class="mt-1.5 text-sm text-muted">Use the username and password your admin gave you.</p>
+        {error && <p role="alert" class="mt-5 flex items-start gap-2 rounded-xl border border-bad/30 bg-bad/10 px-3.5 py-3 text-sm text-bad"><Icon name="CircleAlert" size={17} class="mt-0.5 shrink-0" />{error}</p>}
+        <input type="hidden" name="next" value={next} />
+        <label class="mt-6 block text-sm font-medium" for="username">Username</label>
+        <input class="field mt-1.5" id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value={u} autofocus={!u} />
+        <label class="mt-4 block text-sm font-medium" for="password">Password</label>
+        <div class="relative mt-1.5">
+          <input class="field pr-11" id="password" name="password" type="password" autocomplete="current-password" required autofocus={!!u} />
+          <button type="button" class="absolute inset-y-0 right-1.5 my-auto grid h-8 w-8 place-items-center rounded-lg text-muted hover:text-ink" data-reveal aria-label="Show password" aria-pressed="false"><Icon name="Eye" size={17} /></button>
+        </div>
+        <button class="btn btn-primary mt-6 w-full justify-center h-11 text-[15px]">Sign in <Icon name="ArrowRight" size={17} /></button>
+        <p class="mt-6 text-xs leading-relaxed text-faint">Forgot your password? Your admin can reset it from the admin panel.</p>
+      </form>
+    </section>
+  </main>
+</Base>
+
+<script>
+  function init() {
+    const b = document.querySelector<HTMLButtonElement>('[data-reveal]');
+    const pw = document.querySelector<HTMLInputElement>('#password');
+    b?.addEventListener('click', () => { const show = pw!.type === 'password'; pw!.type = show ? 'text' : 'password'; b.setAttribute('aria-pressed', String(show)); b.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); });
+    document.querySelector('form')?.addEventListener('submit', (e) => { const btn = (e.target as HTMLFormElement).querySelector('button.btn-primary') as HTMLButtonElement; btn.disabled = true; btn.textContent = 'Signing in…'; });
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce) document.querySelectorAll<HTMLElement>('[data-count]').forEach((el, i) => {
+      const n = +el.dataset.count!, t0 = performance.now() + 250 + i * 90;
+      const tick = (t: number) => { const p = Math.max(0, Math.min(1, (t - t0) / 1100)); el.textContent = String(Math.round(n * (1 - Math.pow(1 - p, 4)))); if (p < 1) requestAnimationFrame(tick); };
+      el.textContent = '0'; requestAnimationFrame(tick);
+    });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .login { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+  .box { position: relative; overflow: hidden; margin: 0.75rem; border-radius: 22px; border: 1px solid var(--line); background: radial-gradient(120% 90% at 20% 10%, color-mix(in oklab, var(--accent) 14%, var(--panel)) 0%, var(--panel) 55%, var(--sunk) 100%); }
+  .grid-lines { position: absolute; inset: 0; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 44px 44px; mask-image: radial-gradient(ellipse at 30% 30%, black 10%, transparent 75%); opacity: 0.55; }
+  .beam { position: absolute; left: 0; right: 0; top: -20%; height: 18%; background: linear-gradient(180deg, transparent, color-mix(in oklab, var(--accent) 22%, transparent) 70%, var(--accent) 98%, transparent); filter: blur(0.5px); opacity: 0.55; animation: beam 5.5s var(--ease) infinite; }
+  @keyframes beam { 0% { transform: translateY(0); opacity: 0; } 12% { opacity: 0.55; } 80% { opacity: 0.4; } 100% { transform: translateY(700%); opacity: 0; } }
+  .form-col { display: grid; place-items: center; padding: 2.5rem 1.5rem; }
+  @media (max-width: 900px) { .login { grid-template-columns: 1fr; } .box { min-height: 22rem; } }
+  @media (max-width: 520px) { .box { min-height: 0; } .box dl, .box p.text-xs { display: none; } .box > div { gap: 1.5rem; } }
+  @media (prefers-reduced-motion: reduce) { .beam { animation: none; opacity: 0; } }
+  :global([data-motion="reduced"]) .beam { animation: none; opacity: 0; }
+</style>

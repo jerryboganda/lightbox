@@ -1,0 +1,17 @@
+---
+interface Props { size?: number }
+const { size = 30 } = Astro.props;
+---
+<svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" class="logo shrink-0">
+  <rect x="1.5" y="1.5" width="29" height="29" rx="8.5" fill="var(--accent)" />
+  <rect x="7.5" y="7" width="17" height="18" rx="3.2" fill="var(--bg)" />
+  <rect class="logo-scan" x="7.5" y="15" width="17" height="2.2" fill="var(--accent)" opacity="0.95" />
+  <rect x="10.5" y="10" width="11" height="3" rx="1.5" fill="var(--accent)" opacity="0.35" />
+  <rect x="10.5" y="19.5" width="7" height="3" rx="1.5" fill="var(--accent)" opacity="0.35" />
+</svg>
+<style>
+  .logo-scan { transform-box: fill-box; animation: logo-scan 3.6s var(--ease) infinite; }
+  @keyframes logo-scan { 0%, 70% { transform: translateY(-6px); opacity: 0; } 76% { opacity: 1; } 96% { transform: translateY(6px); opacity: 0.9; } 100% { opacity: 0; } }
+  :global([data-motion="reduced"]) .logo-scan { animation: none; }
+  @media (prefers-reduced-motion: reduce) { .logo-scan { animation: none; } }
+</style>

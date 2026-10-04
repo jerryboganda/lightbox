@@ -1,0 +1,18 @@
+---
+import App from '../../layouts/App.astro';
+import Flashcards from '../../components/islands/Flashcards';
+---
+<App title="Flashcards" crumbs={[{ label: 'Practice', href: '/practice' }]}>
+  <Flashcards client:load />
+</App>
+<style is:global>
+  .flip { position: relative; display: grid; transform-style: preserve-3d; cursor: pointer; }
+  .face { grid-area: 1 / 1; display: flex; flex-direction: column; min-height: 20rem; padding: 1.6rem 1.75rem; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 18px; }
+  .face.back { transform: rotateY(180deg); }
+  [data-motion="reduced"] .flip { transition: none !important; }
+  .rate { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.75rem 0.5rem; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--c) 35%, var(--line)); color: var(--c); background: color-mix(in oklab, var(--c) 8%, transparent); font-size: 0.9rem; transition: background-color var(--d1), transform var(--d1) var(--ease), opacity var(--d2); }
+  .rate:hover:not(:disabled) { background: color-mix(in oklab, var(--c) 16%, transparent); }
+  .rate:active:not(:disabled) { transform: scale(calc(1 - 0.03 * var(--move))); }
+  .rate:disabled { opacity: 0.35; cursor: default; }
+  .rate-bad { --c: var(--bad); } .rate-signal { --c: var(--signal); } .rate-accent { --c: var(--accent); } .rate-ok { --c: var(--ok); }
+</style>

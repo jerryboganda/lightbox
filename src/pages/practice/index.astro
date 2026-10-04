@@ -1,0 +1,50 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import { mcqs, stats } from '../../lib/data';
+import { dashboard } from '../../server/progress';
+const d = dashboard(Astro.locals.user!.id);
+const keyed = mcqs.filter((m) => m.key).length;
+---
+<App title="Practice">
+  <header class="reveal" style="--i:0">
+    <h1 class="text-2xl font-medium">Practice</h1>
+    <p class="mt-1 text-muted">Spaced flashcards for retention, past-paper MCQs for exam timing.</p>
+  </header>
+  <div class="mt-6 grid gap-4 lg:grid-cols-2">
+    <a href="/practice/cards" class="mode panel lift press reveal group" style="--i:1">
+      <div class="mode-art" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="relative">
+        <h2 class="text-lg font-medium">Flashcards</h2>
+        <p class="mt-1 max-w-sm text-sm text-muted">{stats.anki} cards from verified facts, scheduled by FSRS so you review just before you forget.</p>
+        <p class="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm"><span><span class="num text-xl text-accent">{d.dueNow}</span> <span class="text-muted">due</span></span><span><span class="num text-xl">{d.newToday}</span> <span class="text-muted">new today</span></span><span><span class="num text-xl">{d.cardsSeen}</span> <span class="text-muted">started</span></span></p>
+        <span class="btn btn-primary mt-5">{d.dueNow + d.newToday ? 'Start session' : 'Study ahead'}<Icon name="ArrowRight" size={16} /></span>
+      </div>
+    </a>
+    <a href="/practice/mcq" class="mode panel lift press reveal group" style="--i:2">
+      <div class="mode-art mcq" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
+      <div class="relative">
+        <h2 class="text-lg font-medium">Past-paper MCQs</h2>
+        <p class="mt-1 max-w-sm text-sm text-muted">{mcqs.length} IMM questions. {keyed} have an answer key; disputed ones show the evidence for both sides.</p>
+        <p class="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm"><span><span class="num text-xl">{d.mcqAnswered}</span> <span class="text-muted">answered</span></span><span><span class="num text-xl">{d.mcqKeyed ? Math.round((d.mcqRight / d.mcqKeyed) * 100) + '%' : '–'}</span> <span class="text-muted">correct</span></span></p>
+        <span class="btn mt-5">Open the bank<Icon name="ArrowRight" size={16} /></span>
+      </div>
+    </a>
+  </div>
+  <p class="reveal mt-6 flex items-center gap-2 text-sm text-faint" style="--i:3"><Icon name="Sparkles" size={15} />Coming next: timed exam simulator, TOACS station mode and a custom quiz builder.</p>
+</App>
+<style>
+  .mode { position: relative; overflow: hidden; padding: 1.5rem; min-height: 15rem; }
+  .mode-art { position: absolute; right: -1rem; top: 50%; translate: 0 -50%; width: 11rem; height: 9rem; pointer-events: none; }
+  .mode-art span { position: absolute; inset: 0; border-radius: 16px; border: 1px solid var(--line-strong); background: var(--raised); transition: transform var(--d3) var(--ease); }
+  .mode-art span:nth-child(1) { transform: rotate(-9deg) translate(-1.2rem, 0.4rem); opacity: 0.45; }
+  .mode-art span:nth-child(2) { transform: rotate(-3deg) translate(-0.4rem, 0.1rem); opacity: 0.7; }
+  .mode-art span:nth-child(3) { transform: rotate(4deg); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
+  .mode:hover .mode-art span:nth-child(1) { transform: rotate(-14deg) translate(-2.2rem, 0.6rem); }
+  .mode:hover .mode-art span:nth-child(3) { transform: rotate(8deg) translate(0.4rem, -0.2rem); }
+  .mode-art.mcq { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; width: 9rem; height: auto; right: 1rem; opacity: 0.8; }
+  .mode-art.mcq span { position: static; display: grid; place-items: center; height: 3rem; font-family: var(--font-mono); color: var(--faint); transform: none; opacity: 1; }
+  .mode-art.mcq span:nth-child(3) { color: var(--accent); background: var(--glow); }
+  .mode:hover .mode-art.mcq span:nth-child(3) { transform: scale(1.06); }
+  @media (max-width: 640px) { .mode-art { opacity: 0.25; } }
+</style>

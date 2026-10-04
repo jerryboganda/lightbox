@@ -1,0 +1,7 @@
+---
+import { LABELS } from '../lib/data';
+interface Props { label?: string | null; title?: string }
+const { label, title } = Astro.props;
+const l = (label && label in LABELS ? label : null) as keyof typeof LABELS | null;
+---
+{l && <span class={`badge s-${l}`} title={title ?? LABELS[l].hint}>{LABELS[l].text}</span>}

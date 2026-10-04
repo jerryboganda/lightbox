@@ -1,0 +1,52 @@
+---
+import Icon from './Icon.astro';
+import Status from './Status.astro';
+import { factById, cardByFact, isEditionClash } from '../lib/data';
+interface Props { id: string }
+const f = factById.get(Astro.props.id);
+const pid = `pop-${Astro.props.id}-${Math.random().toString(36).slice(2, 7)}`; // same fact can appear twice on a page
+const host = (u: string) => {
+  try {
+    const x = new URL(u), last = decodeURIComponent(x.pathname.replace(/\/$/, '').split('/').pop() || '');
+    return x.hostname.replace(/^www\./, '') + (last ? ` › ${last.slice(0, 48)}` : '');
+  } catch { return u; }
+};
+const card = f && cardByFact.get(f.id);
+---
+{f && (
+  <>
+    <button type="button" class="factchip num" popovertarget={pid} style={`anchor-name: --${pid}`} aria-label={`Source and status of ${f.id}`}>{f.id}</button>
+    <div id={pid} popover class="factpop panel" style={`position-anchor: --${pid}`}>
+      <div class="flex items-center gap-2">
+        <span class="num text-xs text-muted">{f.id}</span><Status label={f.label} />{isEditionClash(f) && <Status label="edition" />}
+        <button type="button" class="ml-auto grid h-7 w-7 place-items-center rounded-lg text-muted hover:text-ink" popovertarget={pid} popovertargetaction="hide" aria-label="Close"><Icon name="X" size={16} /></button>
+      </div>
+      <p class="mt-2 text-[0.9rem] leading-relaxed">{f.fact}</p>
+      {f.paperDiffers && <p class="mt-3 rounded-lg bg-signal/10 px-3 py-2 text-sm text-signal"><span class="font-medium">Paper says:</span> {f.paperDiffers}</p>}
+      {f.edition && isEditionClash(f) && <p class="mt-3 rounded-lg bg-edition/10 px-3 py-2 text-sm text-edition">{f.edition}</p>}
+      <dl class="mt-3 grid gap-2 text-sm">
+        <div class="flex gap-2"><dt class="w-20 shrink-0 text-faint">Source</dt><dd class="min-w-0 text-muted">{f.file} <span class="num">p{f.unit}</span></dd></div>
+        {f.sources.length > 0 && (
+          <div class="flex gap-2"><dt class="w-20 shrink-0 text-faint">Checked</dt>
+            <dd class="min-w-0 space-y-1">{f.sources.slice(0, 4).map((u) => <a href={u} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-accent hover:underline"><Icon name="ExternalLink" size={13} class="shrink-0" /><span class="truncate">{host(u)}</span></a>)}{f.accessDate && <span class="block text-xs text-faint">Accessed {f.accessDate}</span>}</dd>
+          </div>
+        )}
+      </dl>
+      {f.note && <details class="mt-3 text-sm"><summary class="cursor-pointer text-faint hover:text-muted">Verification note</summary><p class="mt-1.5 text-muted">{f.note}</p></details>}
+      <div class="mt-4 flex flex-wrap gap-2">
+        <a href={`/facts?id=${f.id}`} class="btn btn-sm">Open in facts<Icon name="ArrowUpRight" size={14} /></a>
+        {card && <a href={`/practice/cards?focus=${f.id}`} class="btn btn-sm btn-ghost"><Icon name="Layers" size={14} />Flashcard</a>}
+      </div>
+    </div>
+  </>
+)}
+<style is:global>
+  .factchip { font-size: 0.6875rem; padding: 0.15rem 0.45rem; border-radius: 6px; color: var(--faint); border: 1px solid var(--line); transition: color var(--d1), border-color var(--d1); }
+  .factchip:hover { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .factpop { width: min(26rem, calc(100vw - 2rem)); padding: 1rem 1.1rem; margin: 0; color: var(--ink); background: var(--raised); inset: auto; top: 50%; left: 50%; translate: -50% -50%; }
+  @supports (anchor-name: --x) {
+    @media (min-width: 640px) { .factpop { translate: 0; top: anchor(bottom); left: anchor(left); margin-top: 0.4rem; position-try-fallbacks: flip-block, flip-inline; } }
+  }
+  .factpop:popover-open { animation: rise var(--d2) var(--ease); }
+  .factpop::backdrop { background: transparent; }
+</style>

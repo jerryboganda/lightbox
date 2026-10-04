@@ -1,0 +1,14 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+---
+<Base title="Offline">
+  <main class="grid min-h-dvh place-items-center px-6 text-center">
+    <div class="max-w-sm">
+      <div class="mx-auto w-fit"><Logo size={44} /></div>
+      <h1 class="mt-6 text-xl font-medium">You're offline</h1>
+      <p class="mt-2 text-sm text-muted">Pages you've opened before still work, and flashcard reviews are saved on this device until you reconnect.</p>
+      <div class="mt-6 flex justify-center gap-2"><a href="/practice/cards" class="btn btn-primary">Review flashcards</a><button class="btn" onclick="location.reload()">Try again</button></div>
+    </div>
+  </main>
+</Base>

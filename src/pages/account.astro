@@ -1,0 +1,97 @@
+---
+import App from '../layouts/App.astro';
+import Icon from '../components/Icon.astro';
+const user = Astro.locals.user!;
+const p = Astro.url.searchParams;
+const first = p.get('first') === '1' || user.mustChange;
+const pwError = p.get('pwerror'), pwDone = p.get('pwdone'), nameDone = p.get('namedone');
+const seg = (name: string, opts: [string, string][]) => ({ name, opts });
+const prefs = [
+  seg('lb-theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]),
+  seg('lb-motion', [['system', 'System'], ['full', 'Full'], ['reduced', 'Reduced']]),
+  seg('lb-density', [['comfortable', 'Comfortable'], ['compact', 'Compact']]),
+];
+const prefLabels: Record<string, [string, string]> = {
+  'lb-theme': ['Theme', 'System follows your device.'],
+  'lb-motion': ['Motion', 'Reduced keeps fades and feedback but removes movement.'],
+  'lb-density': ['Density', 'Compact fits more rows in lists and tables.'],
+};
+---
+<App title="Account">
+  <div class="mx-auto max-w-3xl">
+    {first ? (
+      <div class="reveal panel flex gap-4 p-5 sm:p-6" style="--i:0">
+        <div class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="KeyRound" size={22} /></div>
+        <div><h1 class="text-xl font-medium">Welcome to Lightbox, {user.displayName.split(' ')[0]}</h1><p class="mt-1 text-sm text-muted">Set your own password to continue. You'll use it with your username <span class="num text-ink">@{user.username}</span> from now on.</p></div>
+      </div>
+    ) : <h1 class="reveal text-2xl font-medium" style="--i:0">Account and preferences</h1>}
+
+    <section id="password" class="reveal panel mt-5 p-5 sm:p-6" style="--i:1">
+      <h2 class="font-medium">{first ? 'Choose your password' : 'Change password'}</h2>
+      <p class="mt-1 text-sm text-muted">At least 10 characters, mixing letters with numbers or symbols. Changing it signs out your other devices.</p>
+      {pwError && <p role="alert" class="mt-4 rounded-xl border border-bad/30 bg-bad/10 px-3.5 py-2.5 text-sm text-bad">{pwError}</p>}
+      {pwDone && <p role="status" class="mt-4 rounded-xl border border-ok/30 bg-ok/10 px-3.5 py-2.5 text-sm text-ok">Password changed.</p>}
+      <form method="post" action="/api/auth/password" class="mt-5 grid gap-4 sm:grid-cols-3">
+        <label class="text-sm font-medium">{first ? 'Temporary password' : 'Current password'}<input class="field mt-1.5" type="password" name="current" autocomplete="current-password" required /></label>
+        <label class="text-sm font-medium">New password<input class="field mt-1.5" type="password" name="next" autocomplete="new-password" minlength="10" required /></label>
+        <label class="text-sm font-medium">Repeat new password<input class="field mt-1.5" type="password" name="confirm" autocomplete="new-password" minlength="10" required /></label>
+        <div class="sm:col-span-3"><button class="btn btn-primary">{first ? 'Save and continue' : 'Change password'}</button></div>
+      </form>
+    </section>
+
+    {!first && (
+      <>
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:2">
+          <h2 class="font-medium">Profile</h2>
+          <p class="mt-1 text-sm text-muted">Your display name appears on comments and the class leaderboard.</p>
+          {nameDone && <p role="status" class="mt-4 rounded-xl border border-ok/30 bg-ok/10 px-3.5 py-2.5 text-sm text-ok">Name updated.</p>}
+          <form method="post" action="/api/account/profile" class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label class="flex-1 text-sm font-medium">Display name<input class="field mt-1.5" name="displayName" required maxlength="60" value={user.displayName} /></label>
+            <button class="btn">Save name</button>
+          </form>
+        </section>
+
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:3">
+          <h2 class="font-medium">Preferences</h2>
+          <p class="mt-1 text-sm text-muted">Saved on this device.</p>
+          <div class="mt-5 divide-y divide-line">
+            {prefs.map((s) => (
+              <div class="flex flex-col gap-3 py-4 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+                <div><div class="text-sm font-medium">{prefLabels[s.name][0]}</div><div class="text-xs text-muted">{prefLabels[s.name][1]}</div></div>
+                <div class="seg" role="radiogroup" aria-label={prefLabels[s.name][0]} data-pref={s.name}>
+                  {s.opts.map(([v, l]) => <button type="button" role="radio" data-v={v}>{l}</button>)}
+                </div>
+              </div>
+            ))}
+            <div class="flex flex-col gap-3 py-4 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+              <div><div class="text-sm font-medium">Text size</div><div class="text-xs text-muted">Scales all text and spacing.</div></div>
+              <div class="flex items-center gap-3"><input type="range" min="90" max="120" step="5" data-fs class="w-40" aria-label="Text size" /><span class="num w-12 text-sm text-muted" data-fs-out>100%</span></div>
+            </div>
+          </div>
+        </section>
+      </>
+    )}
+  </div>
+</App>
+
+<script>
+  function init() {
+    const get = (k: string, d: string) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+    const set = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} (window as any).lbApplyPrefs?.(); };
+    const defaults: Record<string, string> = { 'lb-theme': 'system', 'lb-motion': 'system', 'lb-density': 'comfortable' };
+    document.querySelectorAll<HTMLElement>('[data-pref]').forEach((g) => {
+      const k = g.dataset.pref!;
+      const mark = () => g.querySelectorAll<HTMLElement>('[data-v]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === get(k, defaults[k]))));
+      g.querySelectorAll<HTMLElement>('[data-v]').forEach((b) => b.addEventListener('click', () => { set(k, b.dataset.v!); mark(); }));
+      mark();
+    });
+    const r = document.querySelector<HTMLInputElement>('[data-fs]'), out = document.querySelector('[data-fs-out]');
+    if (r && out) {
+      r.value = get('lb-fs', '100'); out.textContent = r.value + '%';
+      r.addEventListener('input', () => { out.textContent = r.value + '%'; set('lb-fs', r.value); });
+    }
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+

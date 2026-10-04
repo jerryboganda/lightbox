@@ -1,0 +1,117 @@
+---
+import App from '../../../layouts/App.astro';
+import Icon from '../../../components/Icon.astro';
+import Status from '../../../components/Status.astro';
+import FactPop from '../../../components/FactPop.astro';
+import { factById, topics, topicBySlug, SYSTEMS } from '../../../lib/data';
+import { noteVisit } from '../../../server/progress';
+
+const { system, slug } = Astro.params;
+const t = topicBySlug.get(slug!);
+if (!t || t.system !== system) return Astro.redirect(`/study/${system ?? ''}`);
+noteVisit(Astro.locals.user!.id, 'topic', Astro.url.pathname, t.title);
+
+const ids = [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))];
+const fs = ids.map((id) => factById.get(id)!).filter(Boolean);
+const sources = [...new Set(fs.flatMap((f) => f.sources))];
+const files = [...new Set(fs.map((f) => `${f.file} p${f.unit}`))];
+const siblings = topics.filter((x) => x.system === system).sort((a, b) => a.title.localeCompare(b.title));
+const idx = siblings.findIndex((x) => x.slug === slug);
+const prev = siblings[idx - 1], next = siblings[idx + 1];
+const anchor = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const counts = ['cited', 'agreed', 'unchecked', 'disputed'].map((l) => [l, fs.filter((f) => f.label === l).length] as const).filter(([, n]) => n);
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+---
+<App title={t.title} crumbs={[{ label: 'Study', href: '/study' }, { label: SYSTEMS[t.system].label, href: `/study/${t.system}` }]}>
+  <div class="reader">
+    <article class="min-w-0">
+      <header class="reveal" style="--i:0">
+        <h1 class="text-[1.75rem] font-medium leading-tight sm:text-[2rem]">{t.title}</h1>
+        <p class="mt-2 max-w-[65ch] text-[1.0625rem] text-muted">{t.oneLiner}</p>
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          {counts.map(([l, n]) => <span class={`badge s-${l}`}>{n} {l}</span>)}
+          <span class="text-xs text-faint">from {files.length} source page{files.length === 1 ? '' : 's'}</span>
+        </div>
+      </header>
+
+      {t.sections.map((s, si) => (
+        <section id={anchor(s.heading)} class="reveal mt-8 scroll-mt-24" style={`--i:${si + 1}`}>
+          <h2 class="flex items-center gap-2 text-lg font-medium">{s.heading}</h2>
+          <ul class="mt-3 space-y-2.5">
+            {s.bullets.map((b) => {
+              const paper = b.text.startsWith('Paper differs:');
+              return (
+                <li class:list={['point', { paper }]}>
+                  <span class={`dot s-${b.label ?? 'neutral'}`} aria-hidden="true"></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="max-w-[68ch] leading-relaxed">{paper ? <><span class="font-medium text-signal">Paper differs. </span>{b.text.replace('Paper differs:', '').trim()}</> : b.text}</p>
+                    <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <Status label={b.label} />
+                      {b.ids.map((id) => <FactPop id={id} />)}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More topics in this system">
+        {prev ? <a href={`/study/${system}/${prev.slug}`} class="panel lift p-4"><span class="flex items-center gap-1 text-xs text-faint"><Icon name="ArrowLeft" size={13} />Previous</span><span class="mt-1 block truncate">{prev.title}</span></a> : <span></span>}
+        {next && <a href={`/study/${system}/${next.slug}`} class="panel lift p-4 text-right"><span class="flex items-center justify-end gap-1 text-xs text-faint">Next<Icon name="ArrowRight" size={13} /></span><span class="mt-1 block truncate">{next.title}</span></a>}
+      </nav>
+    </article>
+
+    <aside class="side">
+      <div class="sticky top-24 space-y-6">
+        {t.sections.length > 1 && (
+          <nav aria-label="On this page">
+            <h2 class="text-xs font-medium tracking-wide text-faint">On this page</h2>
+            <ul class="mt-2 space-y-1 text-sm" data-toc>
+              {t.sections.map((s) => <li><a href={`#${anchor(s.heading)}`} class="toc-link">{s.heading}</a></li>)}
+            </ul>
+          </nav>
+        )}
+        {sources.length > 0 && (
+          <div>
+            <h2 class="text-xs font-medium tracking-wide text-faint">Checked against</h2>
+            <ul class="mt-2 space-y-1.5 text-sm">
+              {sources.slice(0, 8).map((u) => <li><a href={u} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-muted hover:text-accent"><Icon name="ExternalLink" size={13} class="shrink-0" /><span class="truncate">{host(u)}</span></a></li>)}
+            </ul>
+          </div>
+        )}
+        <div>
+          <h2 class="text-xs font-medium tracking-wide text-faint">From the papers</h2>
+          <ul class="mt-2 space-y-1 text-xs text-muted">{files.slice(0, 8).map((f) => <li class="truncate" title={f}>{f}</li>)}</ul>
+        </div>
+      </div>
+    </aside>
+  </div>
+</App>
+
+<script>
+  function toc() {
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-toc] a')];
+    if (!links.length) return;
+    const io = new IntersectionObserver((es) => {
+      for (const e of es) if (e.isIntersecting) links.forEach((l) => l.classList.toggle('on', l.hash === '#' + e.target.id));
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    links.forEach((l) => { const s = document.querySelector(l.hash); if (s) io.observe(s); });
+    document.addEventListener('astro:before-swap', () => io.disconnect(), { once: true });
+  }
+  toc();
+  document.addEventListener('astro:after-swap', toc);
+</script>
+
+<style>
+  .reader { display: grid; grid-template-columns: minmax(0, 1fr) 15rem; gap: 3rem; }
+  .point { display: flex; gap: 0.85rem; padding: 0.75rem 0.9rem; margin: 0 -0.9rem; border-radius: 12px; transition: background-color var(--d1); }
+  .point:hover { background: color-mix(in oklab, var(--ink) 3.5%, transparent); }
+  .point.paper { background: color-mix(in oklab, var(--signal) 7%, transparent); }
+  .dot { margin-top: 0.62rem; width: 0.4rem; height: 0.4rem; border-radius: 99px; background: var(--c); flex: none; box-shadow: 0 0 0 4px color-mix(in oklab, var(--c) 16%, transparent); }
+  .toc-link { display: block; padding: 0.2rem 0 0.2rem 0.75rem; border-left: 1px solid var(--line); color: var(--muted); transition: color var(--d1), border-color var(--d1); }
+  .toc-link:hover { color: var(--ink); }
+  .toc-link.on { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 1023px) { .reader { grid-template-columns: 1fr; } .side { display: none; } }
+</style>
