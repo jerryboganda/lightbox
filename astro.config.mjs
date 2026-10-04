@@ -17,6 +17,8 @@ export default defineConfig({
   security: { checkOrigin: true, allowedDomains: [{ hostname: 'lightbox.polytronx.com', protocol: 'https' }] },
   prefetch: { prefetchAll: true, defaultStrategy: 'hover' },
   image: { responsiveStyles: true },
-  vite: { plugins: [tailwindcss()] },
+  vite: { plugins: [tailwindcss()], cacheDir: './.cache/vite' },
   devToolbar: { enabled: false },
+  // Per-checkout caches (worktrees share node_modules through a junction).
+  cacheDir: './.cache/astro',
 });
