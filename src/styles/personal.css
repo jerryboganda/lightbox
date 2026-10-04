@@ -1,0 +1,89 @@
+/* Personal layer: mark toggles, highlights, selection toolbar, notes and the collect menu.
+   Imported by the global Highlighter island, so it is on every app page. */
+
+/* Bookmark / weak toggles (MarkToggle.astro and islands) */
+[data-mark] svg { transition: transform var(--d2) var(--ease), fill var(--d1); }
+[data-mark][aria-pressed="true"] { color: color-mix(in oklab, var(--accent) 80%, var(--ink)); }
+[data-mark="weak"][aria-pressed="true"] { color: var(--signal); }
+[data-mark][aria-pressed="true"] svg { fill: currentColor; fill-opacity: 0.9; }
+[data-mark]:hover svg { transform: scale(calc(1 + 0.08 * var(--move))); }
+.mk-pop svg { animation: mk-pop 460ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes mk-pop { 30% { transform: scale(calc(1 + 0.4 * var(--move))) rotate(calc(-8deg * var(--move))); } 100% { transform: scale(1); } }
+
+/* Highlights painted into the page */
+mark.lb-hl { --hl: 245 181 68; --hl-a: 0.26; color: inherit; background: rgb(var(--hl) / var(--hl-a)); box-shadow: inset 0 -2px 0 rgb(var(--hl) / 0.6); border-radius: 3px; padding: 0 1px; -webkit-box-decoration-break: clone; box-decoration-break: clone; cursor: pointer; transition: background-color var(--d1); }
+mark.lb-hl[data-color="cyan"] { --hl: 34 211 238; --hl-a: 0.2; }
+mark.lb-hl[data-color="green"] { --hl: 52 211 153; --hl-a: 0.2; }
+mark.lb-hl[data-color="violet"] { --hl: 167 139 250; --hl-a: 0.26; }
+[data-theme="light"] mark.lb-hl { --hl: 251 191 36; --hl-a: 0.4; }
+[data-theme="light"] mark.lb-hl[data-color="cyan"] { --hl: 34 211 238; --hl-a: 0.3; }
+[data-theme="light"] mark.lb-hl[data-color="green"] { --hl: 52 211 153; --hl-a: 0.32; }
+[data-theme="light"] mark.lb-hl[data-color="violet"] { --hl: 167 139 250; --hl-a: 0.34; }
+mark.lb-hl:hover { --hl-a: 0.42; }
+mark.lb-hl[data-hl-note]::after { content: ""; display: inline-block; width: 0.38rem; height: 0.38rem; margin: 0 0 0.45em 0.15rem; border-radius: 99px; background: rgb(var(--hl)); vertical-align: middle; }
+mark.lb-hl:focus-visible { outline-offset: 1px; border-radius: 3px; }
+mark.lb-hl.lb-hl-flash { animation: hl-flash 1.6s var(--ease) 2; }
+@keyframes hl-flash { 50% { opacity: 0.45; } }
+mark.lb-hl a, a mark.lb-hl { cursor: pointer; }
+
+/* Selection toolbar */
+.lb-hlbar { position: fixed; z-index: 45; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 13px; background: var(--raised); border: 1px solid var(--line-strong); box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.25); color: var(--ink); }
+.lb-hlbar.is-phone { justify-content: space-between; padding: 6px; }
+/* Touch and phone: a bar docked above the tab bar instead of floating over the native selection menu. */
+.lb-hlbar.is-phone, .lb-hlpop.is-phone { left: 0.6rem !important; right: 0.6rem; top: auto !important; bottom: calc(1rem + env(safe-area-inset-bottom)); width: auto; max-width: 30rem; margin-inline: auto; }
+@media (max-width: 767px) { :root:not([data-focus="on"]) :is(.lb-hlbar, .lb-hlpop).is-phone { bottom: calc(4.75rem + env(safe-area-inset-bottom)); } }
+.lb-hlbar .arrow { position: absolute; left: var(--ax, 50%); width: 10px; height: 10px; translate: -50% 0; rotate: 45deg; background: var(--raised); border: 1px solid var(--line-strong); }
+.lb-hlbar[data-place="above"] .arrow { bottom: -6px; border-top: 0; border-left: 0; }
+.lb-hlbar[data-place="below"] .arrow { top: -6px; border-bottom: 0; border-right: 0; }
+.lb-sep { width: 1px; align-self: stretch; margin: 4px 3px; background: var(--line-strong); }
+.lb-sw { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 9px; transition: background-color var(--d1); }
+.lb-sw::before { content: ""; width: 1rem; height: 1rem; border-radius: 99px; background: rgb(var(--hl)); box-shadow: 0 0 0 3px rgb(var(--hl) / 0.22); transition: transform var(--d2) var(--ease); }
+.lb-sw:hover { background: color-mix(in oklab, var(--ink) 7%, transparent); }
+.lb-sw:hover::before { transform: scale(calc(1 + 0.18 * var(--move))); }
+.lb-sw:active::before { transform: scale(calc(1 - 0.12 * var(--move))); }
+.lb-sw[aria-pressed="true"]::before { box-shadow: 0 0 0 2px var(--raised), 0 0 0 4px rgb(var(--hl)); }
+.lb-sw[data-color="amber"] { --hl: 245 181 68; } .lb-sw[data-color="cyan"] { --hl: 34 211 238; }
+.lb-sw[data-color="green"] { --hl: 52 211 153; } .lb-sw[data-color="violet"] { --hl: 167 139 250; }
+.lb-tb { display: inline-flex; align-items: center; gap: 0.4rem; height: 2rem; padding: 0 0.6rem; border-radius: 9px; font-size: 0.8125rem; color: var(--muted); white-space: nowrap; transition: color var(--d1), background-color var(--d1), transform var(--d1) var(--ease); }
+.lb-tb:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 7%, transparent); }
+.lb-tb:active { transform: scale(calc(1 - 0.05 * var(--move))); }
+.lb-tb svg { flex: none; }
+@media (max-width: 767px) { .lb-tb { padding: 0 0.55rem; height: 2.5rem; } .lb-tb .lb-tl { display: none; } .lb-sw { width: 2.4rem; height: 2.5rem; } }
+
+/* Highlight editor */
+.lb-hlpop { position: fixed; z-index: 46; width: min(19rem, calc(100vw - 1.2rem)); padding: 0.7rem; border-radius: 14px; background: var(--raised); border: 1px solid var(--line-strong); box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.55); color: var(--ink); }
+.lb-ta { display: block; width: 100%; min-height: 4.5rem; resize: none; padding: 0.55rem 0.7rem; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--sunk); color: var(--ink); font-size: 0.875rem; line-height: 1.55; transition: border-color var(--d1), box-shadow var(--d1); }
+.lb-ta:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow); }
+.lb-ta::placeholder { color: var(--faint); }
+
+/* Native dialogs (new flashcard, edit card, confirm) */
+dialog.lb-dialog { width: min(34rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 0; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--raised); color: var(--ink); box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.7); }
+dialog.lb-dialog[open] { animation: rise var(--d3) var(--ease); }
+dialog.lb-dialog::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur(3px); }
+.lb-dialog .dh { display: flex; align-items: center; gap: 0.75rem; padding: 1.1rem 1.25rem 0; }
+.lb-dialog .db { display: grid; gap: 0.9rem; padding: 1rem 1.25rem; }
+.lb-dialog .df { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; padding: 0.85rem 1.25rem 1.1rem; border-top: 1px solid var(--line); }
+.lb-dialog label > span { display: flex; justify-content: space-between; font-size: 0.8125rem; font-weight: 500; color: var(--muted); margin-bottom: 0.35rem; }
+
+/* Private notes */
+.lb-note { border: 1px solid var(--line); border-radius: 14px; background: color-mix(in oklab, var(--sunk) 55%, var(--panel)); transition: border-color var(--d2), box-shadow var(--d2); }
+.lb-note:focus-within { border-color: color-mix(in oklab, var(--accent) 60%, var(--line)); box-shadow: 0 0 0 4px var(--glow); }
+.lb-note textarea { display: block; width: 100%; min-height: 4.75rem; resize: none; padding: 0 1rem 0.6rem; background: transparent; color: var(--ink); font-size: 0.9375rem; line-height: 1.6; outline: none; overflow: hidden; }
+.lb-note textarea::placeholder { color: var(--faint); }
+.lb-dot { width: 0.4rem; height: 0.4rem; border-radius: 99px; background: currentColor; }
+.lb-dot.pulse { animation: lb-pulse 1s ease-in-out infinite; }
+@keyframes lb-pulse { 50% { opacity: 0.3; } }
+
+/* Collect menu */
+.lb-cpop { position: fixed; inset: auto; margin: 0; width: 19rem; max-width: calc(100vw - 1.2rem); padding: 0.4rem; border-radius: 14px; background: var(--raised); border: 1px solid var(--line-strong); box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.55); color: var(--ink); }
+.lb-cpop:popover-open { animation: rise var(--d2) var(--ease); }
+.lb-crow { display: flex; align-items: center; gap: 0.65rem; padding: 0.5rem 0.6rem; border-radius: 9px; font-size: 0.875rem; cursor: pointer; transition: background-color var(--d1); }
+.lb-crow:hover, .lb-crow:has(input:focus-visible) { background: color-mix(in oklab, var(--ink) 6%, transparent); }
+.lb-crow input { width: 1rem; height: 1rem; flex: none; }
+@media (max-width: 767px) {
+  .lb-cpop { left: 0.6rem !important; right: 0.6rem; top: auto !important; bottom: calc(4.75rem + env(safe-area-inset-bottom)); width: auto; max-width: none; }
+  .lb-cpop::backdrop { background: rgb(0 0 0 / 0.35); }
+}
+
+/* Armed two-step delete buttons (library) */
+.is-armed { color: var(--bad) !important; background: color-mix(in oklab, var(--bad) 12%, transparent) !important; }

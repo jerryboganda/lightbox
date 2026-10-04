@@ -1,0 +1,111 @@
+---
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import App from '../../../layouts/App.astro';
+import Icon from '../../../components/Icon.astro';
+import MarkToggle from '../../../components/MarkToggle.astro';
+import Row from '../_Row.astro';
+import Empty from '../_Empty.astro';
+import { ago, getCollection, intId, itemInfo, type ItemInfo } from '../../../server/personal';
+
+const uid = Astro.locals.user!.id;
+const c = getCollection(uid, intId(Astro.params.id));
+if (!c) Astro.response.status = 404;
+
+const mods = import.meta.glob<{ default: ImageMetadata }>('/src/assets/atlas/*', { eager: true });
+const atlas = new Map(Object.entries(mods).map(([k, m]) => [k.split('/').pop()!, m.default]));
+const thumb = async (file?: string) => { const src = file ? atlas.get(file) : undefined; return src ? (await getImage({ src, width: 112, format: 'webp', quality: 70 })).src : null; };
+const items = c ? await Promise.all(c.items.map((it) => itemInfo(uid, it.type, it.id)).filter((x): x is ItemInfo => !!x).map(async (info) => ({ info, thumb: await thumb(info.image) }))) : [];
+const NAMES: Record<string, string> = { fact: 'fact', topic: 'topic', mcq: 'MCQ', image: 'image' };
+const mix = Object.entries(NAMES).map(([t, n]) => [items.filter((i) => i.info.type === t).length, n] as const).filter(([k]) => k).map(([k, n]) => `${k} ${n}${k === 1 ? '' : 's'}`).join(' · ');
+const back = c && !c.owner ? { label: 'Class collections', href: '/library/shared' } : { label: 'Collections', href: '/library?tab=collections' };
+---
+<App title={c?.name ?? 'Collection not found'} crumbs={[{ label: 'Library', href: '/library' }, back]}>
+  {!c ? (
+    <><h1 class="sr-only">Collection not found</h1><Empty icon="FolderLock" title="This collection isn't available" text="It may be private, or its owner may have deleted it.">
+      <a href="/library/shared" class="btn btn-primary"><Icon name="UsersRound" size={16} />Class collections</a>
+      <a href="/library?tab=collections" class="btn">Your collections</a>
+    </Empty></>
+  ) : (
+    <div data-collection={c.id} data-no-highlight>
+      <header class="colhead reveal" style="--i:0">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-faint">
+            <span class:list={['badge', c.shared ? 's-agreed' : 's-neutral']} data-share-state>{c.shared ? 'shared' : 'private'}</span>
+            {!c.owner && <span>by <span class="text-muted">{c.ownerName}</span></span>}
+            <span><span class="num text-muted" data-item-count>{items.length}</span> items{mix && <span class="max-sm:hidden"> ({mix})</span>}</span>
+            <span>· updated {ago(c.updatedAt)}</span>
+          </div>
+          <h1 class="mt-2 break-words text-2xl font-medium" data-col-name>{c.name}</h1>
+          <p class:list={['mt-1 max-w-2xl whitespace-pre-line text-muted', { hidden: !c.description }]} data-col-desc>{c.description}</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          {c.owner ? (
+            <>
+              <button type="button" role="switch" class="switch" aria-checked={c.shared ? 'true' : 'false'} data-act="share" data-id={c.id}>
+                <span class="track" aria-hidden="true"><span class="knob"></span></span>Share with class
+              </button>
+              <button type="button" class="btn btn-sm" data-act="edit-col"><Icon name="PenLine" size={15} />Edit</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-act="del-col" data-id={c.id} data-confirm="Delete this collection?"><Icon name="Trash2" size={15} /><span data-label>Delete</span></button>
+            </>
+          ) : (
+            <button type="button" class="btn btn-primary btn-sm" data-act="copy-col" data-id={c.id}><Icon name="Copy" size={15} />Copy to my collections</button>
+          )}
+        </div>
+      </header>
+
+      {items.length ? (
+        <ul class="panel reveal mt-6 divide-y divide-line overflow-hidden" style="--i:1" data-list aria-label="Items">
+          {items.map((it, i) => (
+            <Row info={it.info} thumb={it.thumb} item>
+              {c.owner ? (
+                <>
+                  <button type="button" class="btn btn-sm btn-ghost !px-1.5" data-act="move" data-dir="-1" aria-label={`Move ${it.info.id} up`} title="Move up" disabled={i === 0}><Icon name="ChevronUp" size={16} /></button>
+                  <button type="button" class="btn btn-sm btn-ghost !px-1.5" data-act="move" data-dir="1" aria-label={`Move ${it.info.id} down`} title="Move down" disabled={i === items.length - 1}><Icon name="ChevronDown" size={16} /></button>
+                  <button type="button" class="btn btn-sm btn-ghost !px-1.5" data-act="rm-item" data-type={it.info.type} data-id={it.info.id} aria-label={`Remove ${it.info.id} from this collection`} title="Remove from collection"><Icon name="X" size={16} /></button>
+                </>
+              ) : it.info.type !== 'card' && <MarkToggle type={it.info.type as 'fact'} id={it.info.id} compact />}
+            </Row>
+          ))}
+        </ul>
+      ) : c.owner ? (
+        <div class="mt-6">
+          <Empty icon="FolderPlus" title="This collection is empty" text="Press Collect on any bookmark, or on a topic or fact page, and pick this collection.">
+            <a href="/library" class="btn btn-primary"><Icon name="Bookmark" size={16} />Your bookmarks</a>
+            <a href="/study" class="btn"><Icon name="BookOpenText" size={16} />Browse topics</a>
+          </Empty>
+        </div>
+      ) : (
+        <div class="mt-6"><Empty icon="Folder" title="Nothing in here yet" text={`${c.ownerName} hasn't added anything to this collection so far.`}><a href="/library/shared" class="btn">Back to class collections</a></Empty></div>
+      )}
+
+      {c.owner && (
+        <dialog id="col-dlg" class="lb-dialog" aria-labelledby="col-dlg-h">
+          <form data-form="edit-col" data-id={c.id}>
+            <div class="dh"><h2 id="col-dlg-h" class="font-medium">Edit collection</h2></div>
+            <div class="db">
+              <label><span>Name</span><input name="name" class="field" required maxlength="80" value={c.name} autocomplete="off" /></label>
+              <label><span>Description</span><textarea name="description" class="lb-ta" rows="3" maxlength="500">{c.description}</textarea></label>
+            </div>
+            <div class="df"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Save</button></div>
+          </form>
+        </dialog>
+      )}
+    </div>
+  )}
+</App>
+
+<script>
+  import '../../../scripts/library';
+</script>
+
+<style>
+  .colhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 1.5rem; }
+  .switch { display: inline-flex; align-items: center; gap: 0.6rem; height: 2rem; padding: 0 0.7rem 0 0.45rem; border-radius: 99px; border: 1px solid var(--line-strong); font-size: 0.8125rem; font-weight: 500; transition: border-color var(--d1), background-color var(--d1); }
+  .switch:hover { background: color-mix(in oklab, var(--ink) 5%, transparent); }
+  .track { position: relative; width: 2rem; height: 1.15rem; border-radius: 99px; background: var(--line-strong); transition: background-color var(--d2); }
+  .knob { position: absolute; top: 0.15rem; left: 0.15rem; width: 0.85rem; height: 0.85rem; border-radius: 99px; background: var(--ink); transition: transform var(--d3) cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .switch[aria-checked="true"] { border-color: color-mix(in oklab, var(--accent) 50%, transparent); }
+  .switch[aria-checked="true"] .track { background: var(--accent); }
+  .switch[aria-checked="true"] .knob { transform: translateX(0.85rem); background: var(--accent-ink); }
+</style>

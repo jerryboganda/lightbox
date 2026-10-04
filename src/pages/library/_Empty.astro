@@ -1,0 +1,26 @@
+---
+import Icon from '../../components/Icon.astro';
+interface Props { icon: string; title: string; text: string }
+const { icon, title, text } = Astro.props;
+---
+<div class="empty panel reveal" style="--i:2">
+  <span class="art" aria-hidden="true">
+    <svg viewBox="0 0 96 96" width="96" height="96"><circle cx="48" cy="48" r="44" class="r1" /><circle cx="48" cy="48" r="32" class="r2" /></svg>
+    <span class="ico"><Icon name={icon} size={22} /></span>
+  </span>
+  <h2 class="mt-4 text-lg font-medium">{title}</h2>
+  <p class="mt-1 max-w-md text-sm text-muted">{text}</p>
+  <div class="mt-5 flex flex-wrap justify-center gap-2"><slot /></div>
+</div>
+
+<style>
+  .empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 3rem 1.5rem 2.5rem; background: radial-gradient(120% 90% at 50% 0%, var(--glow), transparent 60%), var(--panel); }
+  .art { position: relative; display: grid; place-items: center; width: 6rem; height: 6rem; }
+  .art svg { position: absolute; inset: 0; }
+  .art circle { fill: none; stroke: color-mix(in oklab, var(--accent) 40%, var(--line)); stroke-width: 1; stroke-dasharray: 280; stroke-dashoffset: 280; animation: draw 1.4s var(--ease) 0.15s forwards; }
+  .art .r2 { stroke-dasharray: 3 5; stroke-dashoffset: 0; animation: none; opacity: 0.7; }
+  .ico { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 14px; background: var(--glow); color: var(--accent); border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent); }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @media (prefers-reduced-motion: reduce) { .art circle { animation: none; stroke-dashoffset: 0; } }
+  :global([data-motion="reduced"]) .art circle { animation: none; stroke-dashoffset: 0; }
+</style>

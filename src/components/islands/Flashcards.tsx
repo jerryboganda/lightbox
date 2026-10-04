@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'motion/react';
 import { createEmptyCard, fsrs, Rating, type Card as FCard, type Grade } from 'ts-fsrs';
 import { get, set } from 'idb-keyval';
-import { CloudOff, ExternalLink, RotateCcw, Sparkles } from 'lucide-react';
+import { CloudOff, ExternalLink, Flag, PenLine, RotateCcw, Sparkles } from 'lucide-react';
+import '../../scripts/marks';
 
-type Anki = { factId: string; front: string; back: string; sourceFile: string; page: number; evidence: string };
+type Anki = { factId: string; front: string; back: string; sourceFile: string; page: number; evidence: string; own?: { factId: string | null; path: string | null } };
 type Item = { factId: string; card: FCard; isNew: boolean };
 type Review = { factId: string; rating: Grade; reviewedAt: number; clientId: string };
 const OUTBOX = 'lb-srs-outbox';
@@ -41,6 +42,9 @@ export default function Flashcards() {
     await flush();
     const [a, q] = await Promise.all([fetch('/api/data/anki').then((r) => r.json()), fetch('/api/srs/queue').then((r) => r.json())]);
     const d = new Map<string, Anki>(a.map((c: Anki) => [c.factId, c]));
+    // The user's own cards ('U<id>') travel with the queue.
+    for (const [id, c] of Object.entries((q.custom ?? {}) as Record<string, { front: string; back: string; factId: string | null; path: string | null }>))
+      d.set(id, { factId: id, front: c.front, back: c.back, sourceFile: '', page: 0, evidence: '', own: { factId: c.factId, path: c.path } });
     setDeck(d);
     setRemainingNew(q.remainingNew);
     const f = new URLSearchParams(location.search).get('focus');
@@ -94,8 +98,10 @@ export default function Flashcards() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (/input|textarea|select/i.test((e.target as HTMLElement).tagName) || e.metaKey || e.ctrlKey) return;
-      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!flipped) setFlipped(true); else rate(Rating.Good); }
+      const t = e.target as HTMLElement;
+      // Buttons and links keep their own Enter/Space; the card face (role=button) and the page body drive the session.
+      if (/input|textarea|select/i.test(t.tagName) || e.metaKey || e.ctrlKey || e.altKey || t.closest?.('[role="dialog"], dialog')) return;
+      if ((e.key === ' ' || e.key === 'Enter') && !t.closest?.('button, a')) { e.preventDefault(); if (!flipped) setFlipped(true); else rate(Rating.Good); }
       const r = RATINGS.find(([, , k]) => k === e.key);
       if (r && flipped) rate(r[0]);
     };
@@ -124,7 +130,10 @@ export default function Flashcards() {
       <div className="flex items-center gap-3 text-sm text-muted">
         <span className="num"><span className="text-ink">{done.n}</span> / {total}</span>
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-sunk"><motion.div className="h-full rounded-full bg-accent" animate={{ width: `${(done.n / total) * 100}%` }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }} /></div>
+        {info?.own && <span className="badge s-edition">your card</span>}
         {cur.isNew ? <span className="badge s-agreed">new</span> : <span className="badge s-neutral">review</span>}
+        {/* Keyed per card: a fresh node gets painted by the marks script instead of keeping the last card's state. */}
+        <button key={cur.factId} type="button" className="btn btn-sm btn-ghost mk !h-7 !px-1.5" data-mark="weak" data-type={info?.own ? 'card' : 'fact'} data-id={cur.factId} aria-pressed="false" aria-label={`Mark ${cur.factId} as a weak spot`} title="Mark as a weak spot"><Flag size={15} aria-hidden="true" /></button>
         {pending > 0 && <span className="flex items-center gap-1 text-xs text-signal" title="Saved on this device; will sync"><CloudOff size={13} />{pending}</span>}
       </div>
       {focus === cur.factId && <p className="mt-3 flex items-center gap-1.5 text-xs text-accent"><Sparkles size={13} />Opened from a topic note</p>}
@@ -142,11 +151,20 @@ export default function Flashcards() {
               <motion.div className="face back panel" style={{ background: tint }}>
                 <span className="text-xs text-faint">Answer</span>
                 <p className="mt-3 text-[1.1rem] leading-relaxed">{info!.back}</p>
-                <div className="mt-auto flex flex-wrap items-center gap-2 pt-6 text-xs text-faint">
-                  <span className="truncate">{info!.sourceFile} p{info!.page}</span>
-                  <a href={`/facts?id=${cur.factId}`} className="num hover:text-accent" onClick={(e) => e.stopPropagation()}>{cur.factId}</a>
-                  {(info!.evidence.match(/https?:\/\/\S+/g) || []).slice(0, 1).map((u) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 hover:text-accent"><ExternalLink size={12} />source</a>)}
-                </div>
+                {info!.own ? (
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-6 text-xs text-faint">
+                    <span className="inline-flex items-center gap-1"><PenLine size={12} aria-hidden="true" />Written by you</span>
+                    {info!.own.factId && <a href={`/facts/${info!.own.factId}`} className="num hover:text-accent" onClick={(e) => e.stopPropagation()}>{info!.own.factId}</a>}
+                    {info!.own.path && <a href={info!.own.path} className="hover:text-accent" onClick={(e) => e.stopPropagation()}>where you made it</a>}
+                    <a href="/library?tab=cards" className="hover:text-accent" onClick={(e) => e.stopPropagation()}>edit</a>
+                  </div>
+                ) : (
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-6 text-xs text-faint">
+                    <span className="truncate">{info!.sourceFile} p{info!.page}</span>
+                    <a href={`/facts/${cur.factId}`} className="num hover:text-accent" onClick={(e) => e.stopPropagation()}>{cur.factId}</a>
+                    {(info!.evidence.match(/https?:\/\/\S+/g) || []).slice(0, 1).map((u) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 hover:text-accent"><ExternalLink size={12} />source</a>)}
+                  </div>
+                )}
               </motion.div>
             </motion.div>
           </motion.div>

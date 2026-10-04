@@ -1,10 +1,13 @@
 ---
-// Owner: personal layer (phase 2). Server-rendered toggle; one delegated client script keeps every toggle on the page in sync.
+// Server-rendered toggle; one delegated client script (src/scripts/marks.ts) keeps every toggle on the page in sync.
 import Icon from './Icon.astro';
 interface Props { type: 'fact' | 'topic' | 'mcq' | 'image'; id: string; kind?: 'bookmark' | 'weak'; label?: string; compact?: boolean }
 const { type, id, kind = 'bookmark', label, compact = false } = Astro.props;
 const text = label ?? (kind === 'bookmark' ? 'Bookmark' : 'Mark weak');
 ---
-<button type="button" class:list={['btn btn-sm btn-ghost', { '!px-2': compact }]} data-mark={kind} data-type={type} data-id={id} aria-pressed="false" aria-label={`${text} ${id}`}>
+<button type="button" class:list={['btn btn-sm btn-ghost mk', { '!px-2': compact }]} data-mark={kind} data-type={type} data-id={id} aria-pressed="false" aria-label={`${text} ${id}`} title={compact ? text : undefined}>
   <Icon name={kind === 'bookmark' ? 'Bookmark' : 'Flag'} size={15} />{!compact && <span>{text}</span>}
 </button>
+<script>
+  import '../scripts/marks';
+</script>
