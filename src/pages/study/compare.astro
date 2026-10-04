@@ -1,0 +1,247 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Status from '../../components/Status.astro';
+import { factById, LABELS, SYSTEMS, topics, type Bullet, type Topic } from '../../lib/data';
+import { alignSections, compareWith, differentials, MAX_COMPARE, parseCompare, starterPairs } from '../../server/study';
+
+const add = Astro.url.searchParams.get('add');
+const chosen = parseCompare(Astro.url.searchParams.get('t'), add);
+const href = (ts: Topic[]) => (ts.length ? `/study/compare?t=${ts.map((t) => t.slug).join(',')}` : '/study/compare');
+if (add !== null) return Astro.redirect(href(chosen));
+
+const rows = alignSections(chosen);
+const full = chosen.length >= MAX_COMPARE;
+const suggest = full ? [] : [...new Set(chosen.flatMap((t) => compareWith(t, 4)))].filter((x) => !chosen.includes(x)).slice(0, 5);
+const pairs = chosen.length ? [] : starterPairs(6);
+const diffs = chosen.length ? differentials.filter((f) => f.topics.some((s) => chosen.some((t) => t.slug === s))) : differentials;
+const isDiff = (b: Bullet) => b.ids.some((id) => factById.get(id)?.kind === 'differential');
+const labelText = (b: Bullet) => (b.label ? LABELS[b.label].text : 'No status');
+const tsv = [['Section', ...chosen.map((t) => t.title)], ...rows.map((r) => [r.heading, ...r.cells.map((c) => c.map((b) => `${b.text} (${labelText(b)}${b.ids.length ? `; ${b.ids.join(', ')}` : ''})`).join(' • '))])]
+  .map((r) => r.map((c) => c.replace(/\s+/g, ' ').trim()).join('\t')).join('\n');
+const counts = (t: Topic) => {
+  const ls = [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))].map((id) => factById.get(id)?.label);
+  return (['cited', 'agreed', 'unchecked', 'disputed'] as const).map((l) => [l, ls.filter((x) => x === l).length] as const).filter(([, n]) => n);
+};
+---
+<App title="Compare" crumbs={[{ label: 'Study', href: '/study' }]} wide>
+  <header class="reveal flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between" style="--i:0">
+    <div>
+      <h1 class="text-2xl font-medium">Compare topics</h1>
+      <p class="mt-1 max-w-2xl text-muted">Line up two to four notes section by section. Every line keeps its status and fact IDs.</p>
+    </div>
+    {chosen.length > 0 && (
+      <div class="flex flex-wrap gap-2" data-no-print>
+        <button type="button" class="btn btn-sm" data-tsv={tsv} disabled={chosen.length < 2}><Icon name="Table" size={15} />Copy as table</button>
+        <a href="/study/compare" class="btn btn-sm btn-ghost"><Icon name="X" size={15} />Clear</a>
+      </div>
+    )}
+  </header>
+
+  <form method="get" action="/study/compare" class="picker reveal mt-5" style="--i:1" data-picker data-base={chosen.map((t) => t.slug).join(',')} data-no-print>
+    {chosen.length > 0 && <input type="hidden" name="t" value={chosen.map((t) => t.slug).join(',')} />}
+    <div class="relative min-w-0 flex-1">
+      <label for="cmp-add" class="sr-only">Add a topic to the comparison</label>
+      <Icon name="Search" size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+      <input id="cmp-add" name="add" class="field pl-9" list="cmp-topics" autocomplete="off" disabled={full}
+        placeholder={full ? `${MAX_COMPARE} topics is the most that fit side by side` : chosen.length ? `Add another topic (${chosen.length} of ${MAX_COMPARE})` : `Search ${topics.length} topics to compare`} />
+      <ul id="cmp-list" class="lb panel" role="listbox" aria-label="Matching topics" hidden></ul>
+    </div>
+    <button type="submit" class="btn" disabled={full}><Icon name="Plus" size={16} />Add</button>
+    <p class="sr-only" aria-live="polite" data-picker-status></p>
+  </form>
+  <datalist id="cmp-topics">
+    {topics.filter((t) => !chosen.includes(t)).map((t) => <option value={t.title} data-slug={t.slug} data-sys={SYSTEMS[t.system]?.label}>{SYSTEMS[t.system]?.label}</option>)}
+  </datalist>
+
+  {suggest.length > 0 && (
+    <div class="sugg reveal mt-3 flex flex-wrap items-center gap-2" style="--i:2" data-no-print>
+      <span class="shrink-0 text-sm text-muted">Compare with</span>
+      {suggest.map((t) => <a href={href([...chosen, t])} class="chip"><Icon name="Plus" size={13} />{t.title}</a>)}
+    </div>
+  )}
+
+  {chosen.length === 0 ? (
+    <>
+      <section class="reveal mt-8" style="--i:2" aria-labelledby="pairs-h">
+        <h2 id="pairs-h" class="font-medium">Start with a differential</h2>
+        <p class="mt-0.5 text-sm text-muted">Notes that carry a differentials section, each paired with its closest neighbour in the same system.</p>
+        <ul class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {pairs.map(([a, b], i) => (
+            <li class="reveal" style={`--i:${i + 3}`}>
+              <a href={href([a, b])} class="panel lift press group flex h-full flex-col gap-3 p-4">
+                <span class="flex items-center gap-2 text-xs text-muted"><Icon name={SYSTEMS[a.system]?.icon ?? 'Shapes'} size={14} />{SYSTEMS[a.system]?.label}</span>
+                <span class="pair">
+                  <span class="font-medium leading-snug">{a.title}</span>
+                  <span class="vs"><span class="vs-i"><Icon name="ArrowLeftRight" size={13} /></span><span class="sr-only">compared with</span></span>
+                  <span class="font-medium leading-snug">{b.title}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </>
+  ) : (
+    <div class:list={['cmp reveal mt-6', { one: chosen.length === 1 }]} style={`--n:${chosen.length};--i:3`} data-cmp tabindex="0" role="region" aria-label="Comparison table, scrolls sideways on small screens">
+      <div class="cmp-head">
+        {chosen.map((t) => (
+          <div class="th">
+            <div class="flex items-start gap-2">
+              <span class="min-w-0 flex-1">
+                <span class="flex items-center gap-1.5 text-xs text-muted"><Icon name={SYSTEMS[t.system]?.icon ?? 'Shapes'} size={13} />{SYSTEMS[t.system]?.label}</span>
+                <a href={`/study/${t.system}/${t.slug}`} class="mt-1 block font-medium leading-snug hover:text-accent">{t.title}</a>
+              </span>
+              <a href={href(chosen.filter((x) => x !== t))} class="btn btn-sm btn-ghost !h-7 !px-1.5 text-muted" aria-label={`Remove ${t.title} from the comparison`} data-no-print><Icon name="X" size={15} /></a>
+            </div>
+            <p class="mt-1.5 line-clamp-2 text-sm text-muted">{t.oneLiner}</p>
+            <p class="mt-2 flex flex-wrap gap-1">{counts(t).map(([l, n]) => <span class={`badge s-${l}`}>{n} {l}</span>)}</p>
+          </div>
+        ))}
+      </div>
+      {rows.map((r) => (
+        <section class="cmp-row" aria-label={r.heading}>
+          <h2 class="rh"><span>{r.heading}</span></h2>
+          <div class="cells">
+            {r.cells.map((c, ci) => (
+              <div class="cell">
+                <span class="sr-only">{chosen[ci].title}: </span>
+                {c.length ? (
+                  <ul class="space-y-3">
+                    {c.map((b) => {
+                      const paper = b.text.startsWith('Paper differs:');
+                      return (
+                        <li class="b">
+                          <span class={`dot s-${b.label ?? 'neutral'}`} aria-hidden="true"></span>
+                          <div class="min-w-0">
+                            <p class="text-[0.9rem] leading-relaxed">{paper ? <><span class="font-medium text-signal">Paper differs. </span>{b.text.replace('Paper differs:', '').trim()}</> : b.text}</p>
+                            <div class="mt-1 flex flex-wrap items-center gap-1">
+                              <Status label={b.label} />
+                              {isDiff(b) && <span class="badge s-neutral">differential</span>}
+                              {b.ids.map((id) => <a href={`/facts/${id}`} class="fchip num">{id}</a>)}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : <p class="text-sm text-muted">Not in this note.</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )}
+
+  {diffs.length > 0 && (
+    <section class="reveal mt-10" style="--i:4" aria-labelledby="diff-h">
+      <h2 id="diff-h" class="flex items-center gap-2 font-medium"><Icon name="Split" size={17} class="text-accent" />{chosen.length ? 'Differential facts in these notes' : 'Differential facts'}<span class="num text-sm text-muted">{diffs.length}</span></h2>
+      <ul class="mt-3 grid gap-2.5 md:grid-cols-2">
+        {diffs.map((f) => (
+          <li><a href={`/facts/${f.id}`} class="panel lift press flex h-full flex-col gap-1.5 p-4"><span class="flex items-center gap-2"><span class="num text-xs text-muted">{f.id}</span><Status label={f.label} /></span><span class="line-clamp-3 text-sm leading-relaxed">{f.fact}</span></a></li>
+        ))}
+      </ul>
+    </section>
+  )}
+</App>
+
+<script>
+  import { navigate } from 'astro:transitions/client';
+  import { toast } from '../../scripts/toast';
+  function init() {
+    document.querySelector<HTMLButtonElement>('[data-tsv]')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget as HTMLButtonElement;
+      try { await navigator.clipboard.writeText(b.dataset.tsv!); toast('Copied as a table. Paste it into a sheet or document.', 'ok'); }
+      catch { toast('Could not copy the table', 'bad'); }
+    });
+    const form = document.querySelector<HTMLFormElement>('[data-picker]');
+    const input = form?.querySelector<HTMLInputElement>('#cmp-add'), lb = form?.querySelector<HTMLUListElement>('#cmp-list');
+    if (!form || !input || !lb || input.disabled) return;
+    const status = form.querySelector('[data-picker-status]')!;
+    const all = [...document.querySelectorAll<HTMLOptionElement>('#cmp-topics option')].map((o) => ({ title: o.value, slug: o.dataset.slug!, sys: o.dataset.sys ?? '', hay: `${o.value} ${o.dataset.sys}`.toLowerCase() }));
+    input.removeAttribute('list');
+    input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-controls', 'cmp-list');
+    let hits: typeof all = [], active = -1;
+    const go = (slug: string) => { const base = form.dataset.base; navigate(`/study/compare?t=${base ? base + ',' : ''}${slug}`); };
+    const paint = () => {
+      lb.replaceChildren(...hits.map((h, i) => {
+        const li = document.createElement('li');
+        li.id = `cmp-o${i}`; li.setAttribute('role', 'option'); li.setAttribute('aria-selected', String(i === active)); li.className = 'opt';
+        const t = document.createElement('span'); t.textContent = h.title; t.className = 'block truncate';
+        const s = document.createElement('span'); s.textContent = h.sys; s.className = 'block truncate text-xs text-muted';
+        li.append(t, s);
+        li.addEventListener('pointerdown', (e) => { e.preventDefault(); go(h.slug); });
+        li.addEventListener('pointermove', () => { if (active !== i) { active = i; sync(); } });
+        return li;
+      }));
+      sync();
+    };
+    const sync = () => {
+      lb.querySelectorAll('[role="option"]').forEach((o, i) => o.setAttribute('aria-selected', String(i === active)));
+      if (active >= 0) { input.setAttribute('aria-activedescendant', `cmp-o${active}`); lb.children[active]?.scrollIntoView({ block: 'nearest' }); }
+      else input.removeAttribute('aria-activedescendant');
+    };
+    const open = (v: boolean) => { lb.hidden = !v; input.setAttribute('aria-expanded', String(v)); };
+    input.addEventListener('input', () => {
+      const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      hits = words.length ? all.filter((h) => words.every((w) => h.hay.includes(w))).slice(0, 8) : [];
+      active = hits.length ? 0 : -1;
+      paint(); open(words.length > 0);
+      if (!hits.length && words.length) { const li = document.createElement('li'); li.className = 'px-3 py-2.5 text-sm text-muted'; li.textContent = 'No topic matches'; lb.append(li); }
+      status.textContent = words.length ? `${hits.length} topic${hits.length === 1 ? '' : 's'} found` : '';
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { if (!hits.length) return; e.preventDefault(); active = (active + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length; sync(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (hits[active]) go(hits[active].slug); }
+      else if (e.key === 'Escape') { if (!lb.hidden) { e.preventDefault(); open(false); } }
+    });
+    input.addEventListener('blur', () => open(false));
+    input.addEventListener('focus', () => { if (hits.length) open(true); });
+    form.addEventListener('submit', (e) => { e.preventDefault(); if (hits[active]) go(hits[active].slug); });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .picker { display: flex; gap: 0.5rem; max-width: 40rem; }
+  .lb { position: absolute; z-index: 25; left: 0; right: 0; top: calc(100% + 0.35rem); max-height: 20rem; overflow: auto; padding: 0.3rem; background: var(--raised); animation: rise var(--d2) var(--ease); }
+  .lb :global(.opt) { padding: 0.5rem 0.7rem; border-radius: 8px; cursor: pointer; }
+  .lb :global(.opt[aria-selected="true"]) { background: var(--glow); }
+  .pair { display: grid; gap: 0.45rem; }
+  .vs { display: flex; align-items: center; gap: 0.6rem; }
+  .vs::after { content: ""; flex: 1; height: 1px; background: var(--line); transform-origin: left; transition: transform var(--d3) var(--ease), background-color var(--d2); }
+  .vs-i { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 99px; color: var(--accent); background: var(--glow); transition: transform var(--d3) var(--ease); }
+  a:hover .vs-i { transform: rotate(calc(180deg * var(--move))); }
+  a:hover .vs::after { background: color-mix(in oklab, var(--accent) 45%, var(--line)); }
+
+  .cmp { --cols: repeat(var(--n), minmax(0, 1fr)); }
+  .cmp:focus-visible { outline-offset: 4px; }
+  .cmp-head { position: sticky; top: 3.75rem; z-index: 6; display: grid; grid-template-columns: var(--cols); gap: 1rem; padding: 0.75rem 0; background: color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter: blur(14px) saturate(1.2); border-bottom: 1px solid var(--line); }
+  .th { min-width: 0; padding: 0.85rem 1rem; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); scroll-snap-align: start; }
+  .cmp-row { padding: 1.1rem 0 0.4rem; border-bottom: 1px solid var(--line); }
+  .rh { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .rh span { position: sticky; left: 0; display: inline-block; padding: 0.15rem 0.5rem 0.15rem 1rem; }
+  .cells { display: grid; grid-template-columns: var(--cols); gap: 1rem; margin-top: 0.4rem; }
+  .cell { min-width: 0; padding: 0.4rem 1rem 0.8rem; border-radius: 12px; transition: background-color var(--d2); }
+  .cmp-row:hover .cell { background: color-mix(in oklab, var(--ink) 2.5%, transparent); }
+  .b { display: flex; gap: 0.7rem; }
+  .dot { margin-top: 0.6rem; width: 0.4rem; height: 0.4rem; border-radius: 99px; background: var(--c); flex: none; box-shadow: 0 0 0 4px color-mix(in oklab, var(--c) 16%, transparent); }
+  .fchip { font-size: 0.6875rem; padding: 0.15rem 0.45rem; border-radius: 6px; color: var(--muted); border: 1px solid var(--line); transition: color var(--d1), border-color var(--d1); }
+  .fchip:hover { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
+  @media (max-width: 767px) {
+    .picker { max-width: none; }
+    .sugg { flex-wrap: nowrap; overflow-x: auto; margin: 0.75rem -1rem 0; padding: 0 1rem 0.25rem; scrollbar-width: none; }
+    .sugg > * { flex: none; }
+    .cmp { --cols: repeat(var(--n), min(82vw, 21rem)); overflow: auto; max-height: calc(100dvh - 10rem - env(safe-area-inset-bottom)); scroll-snap-type: x mandatory; overscroll-behavior-x: contain; margin: 0 -1rem; padding: 0 1rem; scroll-padding-inline: 1rem; border-top: 1px solid var(--line); }
+    .cmp.one { --cols: minmax(0, 1fr); }
+    .cmp-head, .cells { width: max-content; min-width: 100%; gap: 0.75rem; }
+    .cmp-head { top: 0; }
+    .cmp.one .cmp-head, .cmp.one .cells { width: auto; }
+    .rh span { padding-left: 0.25rem; }
+    .cell { padding: 0.4rem 0.25rem 0.8rem; }
+    .th { padding: 0.75rem 0.85rem; }
+  }
+</style>

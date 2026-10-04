@@ -1,7 +1,31 @@
 /* Print and "Save as PDF". Owned by the study-depth work; keep print-only rules here. */
+@media screen { .print-only { display: none !important; } }
 @media print {
-  .rail, .tabs, .topbar, #lb-toasts, [data-no-print] { display: none !important; }
+  @page { margin: 16mm 15mm 18mm; @bottom-right { content: counter(page) " / " counter(pages); font-size: 8pt; color: #555; } }
+  html[data-theme] {
+    color-scheme: light;
+    --bg: #fff; --panel: #fff; --raised: #fff; --sunk: #f3f5f7; --line: #d3dae1; --line-strong: #b8c2cc;
+    --ink: #000; --muted: #333; --faint: #555; --accent: #0e7490; --signal: #8a4206; --ok: #046c4e; --bad: #a51b1b; --edition: #5b21b6;
+    --glow: transparent; --shadow: none;
+  }
+  html, body { background: #fff !important; color: #000 !important; }
+  body { font-size: 10.5pt; line-height: 1.5; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .rail, .tabs, .topbar, #lb-toasts, [data-no-print], [popover], .side, .readbar, astro-island { display: none !important; }
   .shell { display: block; }
-  .content { max-width: none; padding: 0; }
-  html, body { background: #fff; color: #000; }
+  .content, .content.wide { max-width: none !important; padding: 0 !important; }
+  .reader { display: block !important; max-width: none !important; }
+  .panel { box-shadow: none; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { break-after: avoid; }
+  li, p { orphans: 3; widows: 3; }
+  .point, .b, .pbullet { break-inside: avoid; }
+  .point { padding: 0.35rem 0 !important; margin: 0 !important; background: none !important; }
+  .badge { background: none !important; border-color: currentColor; }
+  .factchip { color: #333 !important; border-color: #bbb !important; }
+  .print-kicker { font-size: 8.5pt; letter-spacing: 0.06em; text-transform: uppercase; color: #555; margin-bottom: 4pt; }
+  .print-foot { margin-top: 18pt; padding-top: 10pt; border-top: 1px solid #ccc; font-size: 8.5pt; color: #333; }
+  .print-foot h2 { font-size: 9pt; font-weight: 600; margin: 8pt 0 3pt; }
+  .print-foot ul { margin: 0; padding-left: 1.1em; list-style: disc; overflow-wrap: anywhere; }
+  .print-foot p { margin-top: 6pt; overflow-wrap: anywhere; }
 }

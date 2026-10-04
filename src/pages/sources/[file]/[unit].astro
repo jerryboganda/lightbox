@@ -1,0 +1,206 @@
+---
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import App from '../../../layouts/App.astro';
+import Icon from '../../../components/Icon.astro';
+import Status from '../../../components/Status.astro';
+import NotFound from '../../../components/NotFound.astro';
+import PageText from '../../../components/PageText.astro';
+import { facts, images, shortFile, coverage } from '../../../lib/data';
+import { bestMatch, fileFromSlug, neighbours, pageText, segment, sourceHref, textLabel, unitsByFile, unitWord } from '../../../lib/sources';
+import { mcqsOnPage } from '../../../server/study';
+import { noteVisit } from '../../../server/progress';
+
+const file = fileFromSlug(Astro.params.file ?? '');
+const raw = Astro.params.unit ?? '';
+const units = file ? unitsByFile.get(file)! : [];
+const row = /^\d{1,4}$/.test(raw) ? units.find((u) => u.page === Number(raw)) : undefined;
+const mods = import.meta.glob<{ default: ImageMetadata }>('/src/assets/atlas/*', { eager: true });
+const byName = new Map(Object.entries(mods).map(([p, m]) => [p.split('/').pop()!, m.default]));
+
+let d = null;
+if (file && row) {
+  const text = pageText(file, row.page) ?? '';
+  const lines = segment(text);
+  const segs = lines.flat().map((s) => s.text);
+  const lineOf = lines.flatMap((l, li) => l.map(() => li + 1));
+  const here = facts.filter((f) => f.file === file && f.unit === row.page).map((f) => ({ f, m: bestMatch(f.fact, segs) }));
+  const marks = new Map<number, string>();
+  for (const { f, m } of here) if (m) for (let i = m.start; i <= m.end; i++) if (!marks.has(i)) marks.set(i, f.label);
+  const pics = await Promise.all(images.filter((im) => im.sourceFile === file && im.page === row.page && byName.has(im.file)).map(async (im) => {
+    const src = byName.get(im.file)!;
+    const [thumb, full] = await Promise.all([
+      getImage({ src, width: Math.min(720, src.width), format: 'webp', quality: 74 }),
+      getImage({ src, width: Math.min(1800, src.width), format: 'webp', quality: 82 }),
+    ]);
+    const capLines = im.caption.split('\n').map((l) => l.trim()).filter(Boolean);
+    return { thumb: thumb.src, full: full.src, w: thumb.attributes.width ?? src.width, h: thumb.attributes.height ?? src.height, title: capLines[0] ?? '', caption: im.caption };
+  }));
+  const short = shortFile(file), word = unitWord(file);
+  d = { file, row, text, here, marks, lineOf, pics, short, word, units, mcqs: mcqsOnPage(file, row.page), ...neighbours(row), type: coverage.find((c) => c.name === file)?.type ?? '' };
+  noteVisit(Astro.locals.user!.id, 'source', Astro.url.pathname, `${short} · ${word} ${row.page}`);
+} else Astro.response.status = 404;
+const label = (p: { file: string; page: number }) => `${shortFile(p.file).replace(/^WhatsApp Image /, 'Image ')} · ${unitWord(p.file).toLowerCase()} ${p.page}`;
+---
+<App title={d ? `${d.short} · ${d.word} ${d.row.page}` : 'Page not found'} crumbs={[{ label: 'Sources', href: '/sources' }]}>
+  {d ? (
+    <>
+      <header class="reveal" style="--i:0">
+        <div class="flex items-start gap-3">
+          <div class="min-w-0 flex-1">
+            <p class="flex flex-wrap items-center gap-2 text-sm text-muted">
+              <span class="badge s-neutral uppercase before:hidden">{d.type}</span>
+              <span>{d.word} <span class="num text-ink">{d.row.page}</span> of <span class="num">{d.units.at(-1)!.page}</span></span>
+              <span aria-hidden="true">·</span><span>{textLabel(d.row.textSource, d.text)}</span>
+            </p>
+            <h1 class="mt-2 text-[1.45rem] font-medium leading-snug sm:text-2xl">{d.short}</h1>
+          </div>
+          <nav class="flex shrink-0 gap-1.5" aria-label="Previous and next page">
+            {d.prev ? <a href={sourceHref(d.prev.file, d.prev.page)} class="btn btn-sm !px-2" aria-label={`Previous: ${label(d.prev)}`} title={`Previous: ${label(d.prev)}`}><Icon name="ChevronLeft" size={17} /></a> : <span class="btn btn-sm !px-2 opacity-35" aria-hidden="true"><Icon name="ChevronLeft" size={17} /></span>}
+            {d.next ? <a href={sourceHref(d.next.file, d.next.page)} class="btn btn-sm !px-2" aria-label={`Next: ${label(d.next)}`} title={`Next: ${label(d.next)}`}><Icon name="ChevronRight" size={17} /></a> : <span class="btn btn-sm !px-2 opacity-35" aria-hidden="true"><Icon name="ChevronRight" size={17} /></span>}
+          </nav>
+        </div>
+        {d.units.length > 1 && (
+          <nav class="strip mt-4" aria-label={`${d.word}s of this file`} data-strip>
+            {d.units.map((u) => <a href={sourceHref(d.file, u.page)} class:list={['pg', { yes: u.status === 'facts' }]} aria-current={u.page === d.row.page ? 'page' : undefined} aria-label={`${d.word} ${u.page}, ${u.factCount ? `${u.factCount} fact${u.factCount === 1 ? '' : 's'}` : 'nothing examinable'}`} title={`${d.word} ${u.page}: ${u.factCount ? `${u.factCount} facts` : 'nothing examinable'}`}>{u.page}</a>)}
+          </nav>
+        )}
+      </header>
+
+      {d.row.status !== 'facts' && (
+        <p class="note reveal mt-5" style="--i:1"><Icon name="Info" size={17} class="note-i" /><span><span class="font-medium text-ink">Nothing examinable on this {d.word.toLowerCase()}.</span>{d.row.note && <> The pipeline recorded: <q>{d.row.note}</q></>}</span></p>
+      )}
+
+      <div class="viewer mt-5">
+        <section class="textcol reveal" style="--i:2" aria-labelledby="txt-h">
+          <div class="panel p-0">
+            <div class="flex items-center gap-2 border-b border-line px-4 py-3">
+              <h2 id="txt-h" class="flex items-center gap-2 text-[0.95rem] font-medium"><Icon name="ScrollText" size={17} class="text-accent" />Original text</h2>
+              <span class="ml-auto text-xs text-muted">Verbatim{d.text && <> · <span class="num">{d.lineOf.at(-1)}</span> line{d.lineOf.at(-1) === 1 ? '' : 's'}</>}</span>
+            </div>
+            {d.text
+              ? <div class="pbox" data-pbox tabindex="0" role="region" aria-label={`Text of ${d.short}, ${d.word.toLowerCase()} ${d.row.page}`}><PageText text={d.text} marks={d.marks} /></div>
+              : <div class="grid place-items-center gap-2 px-6 py-12 text-center"><Icon name="FileX" size={24} class="text-faint" /><p class="font-medium">No text layer</p><p class="max-w-xs text-sm text-muted">This {d.word.toLowerCase()} is a picture{d.pics.length ? '; its source caption is shown with the image.' : '.'}</p></div>}
+          </div>
+        </section>
+
+        <div class="min-w-0 space-y-7">
+          <section class="reveal" style="--i:3" aria-labelledby="facts-h">
+            <h2 id="facts-h" class="sec-h">Facts from this {d.word.toLowerCase()}<span class="num text-muted">{d.here.length}</span></h2>
+            {d.here.length ? (
+              <ul class="mt-3 space-y-2.5" data-facts>
+                {d.here.map(({ f, m }) => (
+                  <li id={f.id} class="panel fitem" data-range={m ? `${m.start}-${m.end}` : undefined}>
+                    <div class="flex items-center gap-2">
+                      <span class={`dot s-${f.label}`} aria-hidden="true"></span>
+                      <span class="num text-xs text-muted">{f.id}</span>
+                      <Status label={f.label} />
+                      {m
+                        ? <button type="button" class="btn btn-sm btn-ghost ml-auto !h-7 !px-2 text-muted" data-locate aria-label={`Show where ${f.id} is in the text`}><Icon name="LocateFixed" size={15} /><span class="text-xs">Line {d.lineOf[m.start]}{!m.strong && ' (weak)'}</span></button>
+                        : <span class="ml-auto text-xs text-muted">No clear match</span>}
+                    </div>
+                    <a href={`/facts/${f.id}`} class="group mt-2 block text-[0.9rem] leading-relaxed"><span class="transition-colors group-hover:text-accent">{f.fact}</span><Icon name="ArrowUpRight" size={14} class="ml-1 inline align-[-2px] text-faint" /></a>
+                    {f.paperDiffers && <p class="mt-2 text-xs text-muted"><span class="font-medium text-signal">Paper says.</span> {f.paperDiffers}</p>}
+                  </li>
+                ))}
+              </ul>
+            ) : <p class="mt-2 text-sm text-muted">No facts were taken from this {d.word.toLowerCase()}.</p>}
+          </section>
+
+          {d.pics.length > 0 && (
+            <section class="reveal" style="--i:4" aria-labelledby="pics-h">
+              <h2 id="pics-h" class="sec-h"><Icon name="Image" size={16} class="text-accent" />Image on this {d.word.toLowerCase()}</h2>
+              <ul class="mt-3 space-y-3">
+                {d.pics.map((p) => (
+                  <li class="panel overflow-hidden">
+                    <a href={p.full} target="_blank" rel="noopener" class="block bg-sunk" aria-label={`Open the full image: ${p.title || 'untitled'}`}><img src={p.thumb} alt={p.title || 'Image from the source page'} width={p.w} height={p.h} loading="lazy" decoding="async" class="pic" /></a>
+                    <div class="px-4 py-3">
+                      <p class="text-sm font-medium">{p.title || 'No source caption'}</p>
+                      <details class="mt-1.5 text-sm"><summary class="cursor-pointer text-muted hover:text-ink">Full source caption</summary><p class="mt-2 whitespace-pre-line text-muted">{p.caption}</p></details>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {d.mcqs.length > 0 && (
+            <section class="reveal" style="--i:5" aria-labelledby="mcq-h">
+              <h2 id="mcq-h" class="sec-h"><Icon name="Target" size={16} class="text-accent" />MCQs from this {d.word.toLowerCase()}</h2>
+              <ul class="mt-2 divide-y divide-line">
+                {d.mcqs.map((q) => <li><a href={`/practice/mcq?q=${q.qid}`} class="group block py-2.5"><span class="num text-xs text-muted">{q.qid}</span><span class="mt-0.5 line-clamp-2 block text-sm transition-colors group-hover:text-accent">{q.stem}</span></a></li>)}
+              </ul>
+            </section>
+          )}
+        </div>
+      </div>
+
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="Neighbouring pages">
+        {d.prev ? <a href={sourceHref(d.prev.file, d.prev.page)} class="panel lift p-4"><span class="flex items-center gap-1 text-xs text-muted"><Icon name="ArrowLeft" size={13} />Previous</span><span class="mt-1 block truncate">{label(d.prev)}</span></a> : <span></span>}
+        {d.next && <a href={sourceHref(d.next.file, d.next.page)} class="panel lift p-4 text-right"><span class="flex items-center justify-end gap-1 text-xs text-muted">Next<Icon name="ArrowRight" size={13} /></span><span class="mt-1 block truncate">{label(d.next)}</span></a>}
+      </nav>
+    </>
+  ) : <NotFound what="Page" back="/sources" backLabel="All source pages" />}
+</App>
+
+<script>
+  import { reduced } from '../../../scripts/motion';
+  function init() {
+    const list = document.querySelector<HTMLElement>('[data-facts]'), box = document.querySelector<HTMLElement>('[data-pbox]');
+    document.querySelector('[data-strip] [aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    if (!list || !box) return;
+    let pinned: HTMLElement | null = null;
+    const light = (li: HTMLElement | null, scroll = false) => {
+      box.querySelectorAll('.on').forEach((e) => e.classList.remove('on'));
+      list.querySelectorAll('.lit').forEach((e) => e.classList.remove('lit'));
+      const r = li?.dataset.range?.split('-').map(Number);
+      if (!li || !r) return;
+      li.classList.add('lit');
+      for (let i = r[0]; i <= r[1]; i++) box.querySelector(`[data-s="${i}"]`)?.classList.add('on');
+      const first = box.querySelector<HTMLElement>(`[data-s="${r[0]}"]`);
+      if (scroll && first) {
+        box.scrollTo({ top: Math.max(0, first.offsetTop - box.clientHeight * 0.3), behavior: reduced() ? 'auto' : 'smooth' });
+        const top = box.getBoundingClientRect().top;
+        if (top < 0 || top > innerHeight * 0.6) box.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' });
+      }
+    };
+    for (const li of list.querySelectorAll<HTMLElement>(':scope > li')) {
+      if (!li.dataset.range) continue;
+      li.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') light(li, true); });
+      li.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') light(pinned); });
+      li.addEventListener('focusin', () => light(li, true));
+      li.addEventListener('focusout', (e) => { if (!li.contains(e.relatedTarget as Node)) light(pinned); });
+      li.querySelector('[data-locate]')?.addEventListener('click', () => { pinned = li; light(li, true); });
+    }
+    const hit = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (hit && list.contains(hit)) { pinned = hit; light(hit, true); }
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .strip { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px; }
+  .pic { display: block; width: 100%; height: auto; max-height: 26rem; object-fit: contain; }
+  .pg { flex: none; display: grid; place-items: center; min-width: 1.75rem; height: 1.75rem; padding: 0 0.3rem; border-radius: 7px; font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); background: var(--sunk); border: 1px solid var(--line); transition: color var(--d1), border-color var(--d1), background-color var(--d1); }
+  .pg.yes { color: var(--ink); background: color-mix(in oklab, var(--accent) 11%, var(--panel)); border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
+  .pg:hover { border-color: var(--accent); }
+  .pg[aria-current="page"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .note { display: flex; gap: 0.65rem; padding: 0.8rem 1rem; border-radius: 12px; font-size: 0.9rem; color: var(--muted); background: var(--sunk); border: 1px solid var(--line); }
+  .note :global(.note-i) { flex: none; margin-top: 0.2rem; color: var(--accent); }
+  .viewer { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 1.5rem; align-items: start; }
+  .textcol { position: sticky; top: 4.75rem; min-width: 0; }
+  .pbox { position: relative; max-height: calc(100dvh - 10.5rem); overflow: auto; padding: 0.75rem 1rem 0.9rem 0; overscroll-behavior: contain; }
+  .sec-h { display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; font-weight: 500; }
+  .fitem { padding: 0.8rem 0.95rem; transition: border-color var(--d2) var(--ease), background-color var(--d2) var(--ease), transform var(--d2) var(--ease); }
+  .fitem.lit { border-color: color-mix(in oklab, var(--accent) 55%, transparent); background: color-mix(in oklab, var(--accent) 5%, var(--panel)); transform: translateX(calc(-3px * var(--move))); }
+  .fitem:target { scroll-margin-top: 6rem; }
+  .dot { width: 0.45rem; height: 0.45rem; border-radius: 99px; background: var(--c); box-shadow: 0 0 0 3px color-mix(in oklab, var(--c) 18%, transparent); }
+  @media (max-width: 1023px) {
+    .viewer { grid-template-columns: minmax(0, 1fr); }
+    .textcol { position: static; }
+    .pbox { max-height: 58vh; }
+    .strip { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+    .pbox { scroll-margin-top: 4.5rem; }
+  }
+</style>
