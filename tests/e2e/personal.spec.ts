@@ -63,8 +63,8 @@ test('highlight a selection, see it again after reload, recolour, annotate and d
   await editor.getByRole('button', { name: 'Colour violet' }).click();
   await expect(hl).toHaveAttribute('data-color', 'violet');
   await editor.getByLabel('Note on this highlight').fill('Ask about the K-edge in the viva');
-  await expect(editor.getByText('Saved')).toBeVisible();
-  await page.keyboard.press('Escape');
+  // Closing straight after typing still sends the note.
+  await Promise.all([page.waitForResponse((r) => r.url().includes('/api/highlights') && r.request().method() === 'PATCH' && !!r.request().postData()?.includes('K-edge') && r.ok()), page.keyboard.press('Escape')]);
   await expect(editor).toBeHidden();
 
   await page.reload();
@@ -176,6 +176,13 @@ test('a flashcard can be marked weak and appears under weak spots', async ({ pag
   await expect(flag).toHaveAttribute('aria-pressed', 'false');
   await flag.click();
   await expect(flag).toHaveAttribute('aria-pressed', 'true');
+  // The next card's flag shows that card's own state, not the one just set.
+  await page.locator('.flip').click();
+  await page.getByRole('button', { name: /^Good/ }).click();
+  await expect(flag).not.toHaveAttribute('data-id', id!);
+  const [nType, nId] = [await flag.getAttribute('data-type'), await flag.getAttribute('data-id')];
+  const nextWeak = (await (await page.request.get('/api/marks')).json()).some((m: any) => m.kind === 'weak' && m.type === nType && m.id === nId);
+  await expect(flag).toHaveAttribute('aria-pressed', String(nextWeak));
   await page.goto('/library?tab=weak');
   await expect(page.getByRole('button', { name: `Weak spot: ${id}` })).toBeVisible();
   await mark(page, type!, id!, 'weak', false);

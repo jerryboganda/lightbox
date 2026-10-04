@@ -12,7 +12,7 @@ const ago = (t: number) => {
 
 export default function NotePad({ itemType, itemId, title }: NotePadProps) {
   const [body, setBody] = useState('');
-  const [state, setState] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'unloaded' | 'idle' | 'saving' | 'saved' | 'error'>('loading');
   const [updated, setUpdated] = useState<number | null>(null);
   const [confirm, setConfirm] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -24,7 +24,7 @@ export default function NotePad({ itemType, itemId, title }: NotePadProps) {
   useEffect(() => {
     fetch(`/api/notes?${q}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((n: { body: string; updatedAt: number | null }) => {
       saved.current = n.body; setBody(n.body); setUpdated(n.updatedAt); setState('idle');
-    }).catch(() => setState('error'));
+    }).catch(() => setState('unloaded')); // never save over a note we could not read
   }, [q]);
 
   const save = useCallback(async (text: string, keepalive = false) => {
@@ -74,7 +74,7 @@ export default function NotePad({ itemType, itemId, title }: NotePadProps) {
     ta.current?.focus();
   };
 
-  const status = state === 'loading' ? 'Loading…' : state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved. Retrying when you type.'
+  const status = state === 'loading' ? 'Loading…' : state === 'unloaded' ? "Couldn't load your note. Reload to try again." : state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved. Retrying when you type.'
     : state === 'saved' ? 'Saved' : updated ? `Saved ${ago(updated)}` : 'Only you can see this';
   const near = body.length > MAX - 500;
 
@@ -83,16 +83,16 @@ export default function NotePad({ itemType, itemId, title }: NotePadProps) {
       <div className="flex items-center gap-2 px-4 pb-1.5 pt-3 text-xs">
         <Lock size={13} className="text-faint" aria-hidden="true" />
         <span className="font-medium text-muted">Private note</span>
-        <span className={`ml-auto flex items-center gap-1.5 ${state === 'error' ? 'text-bad' : 'text-faint'}`}>
+        <span className={`ml-auto flex items-center gap-1.5 ${state === 'error' || state === 'unloaded' ? 'text-bad' : 'text-faint'}`}>
           {state === 'saving' && <span className="lb-dot pulse text-accent" aria-hidden="true" />}
           {state === 'saved' && <Check size={13} className="text-ok" aria-hidden="true" />}
-          {state === 'error' && <CloudOff size={13} aria-hidden="true" />}
+          {(state === 'error' || state === 'unloaded') && <CloudOff size={13} aria-hidden="true" />}
           {status}
         </span>
         <span className="sr-only" role="status">{state === 'error' ? 'Your note was not saved.' : ''}</span>
       </div>
       <label htmlFor={`note-${itemType}-${itemId}`} className="sr-only">{title ? `Private note on ${title}` : 'Private note'}</label>
-      <textarea id={`note-${itemType}-${itemId}`} ref={ta} rows={3} maxLength={MAX} value={body} disabled={state === 'loading'}
+      <textarea id={`note-${itemType}-${itemId}`} ref={ta} rows={3} maxLength={MAX} value={body} disabled={state === 'loading' || state === 'unloaded'}
         placeholder="Write a mnemonic, a doubt or a link to a case. Only you can see it."
         onChange={(e) => change(e.target.value)} onBlur={() => pending.current !== null && save(pending.current)}
         onKeyDown={(e) => {

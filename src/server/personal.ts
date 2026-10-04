@@ -141,6 +141,7 @@ export function reorderCollection(uid: number, cid: number, order: unknown) {
   if (!owned(uid, cid) || !Array.isArray(order) || order.length > LIMITS.items) return false;
   const set = db.prepare('UPDATE collection_items SET position = ? WHERE collection_id = ? AND item_type = ? AND item_id = ?');
   db.transaction(() => {
+    db.prepare('UPDATE collection_items SET position = position + ? WHERE collection_id = ?').run(order.length, cid);
     order.forEach((o, i) => { if (o && typeof o.type === 'string' && typeof o.id === 'string') set.run(i, cid, o.type, o.id); });
     touch(cid);
   })();
@@ -234,6 +235,7 @@ export const deleteUserCard = (uid: number, id: number) => db.transaction(() => 
   if (!db.prepare('DELETE FROM user_cards WHERE id = ? AND user_id = ?').run(id, uid).changes) return false;
   db.prepare('DELETE FROM srs_cards WHERE user_id = ? AND fact_id = ?').run(uid, `U${id}`);
   db.prepare("DELETE FROM marks WHERE user_id = ? AND item_type = 'card' AND item_id = ?").run(uid, `U${id}`);
+  db.prepare("DELETE FROM notes WHERE user_id = ? AND item_type = 'card' AND item_id = ?").run(uid, `U${id}`);
   return true;
 })();
 

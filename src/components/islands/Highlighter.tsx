@@ -150,6 +150,7 @@ export default function Highlighter() {
   const bar = useRef<HTMLDivElement>(null), pop = useRef<HTMLDivElement>(null), dlg = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
   const noteTimer = useRef(0);
+  const noteSave = useRef<(() => void) | null>(null);
   const lastColor = useRef<Color>('amber');
   selRef.current = sel;
   const rm = typeof document !== 'undefined' && reduced();
@@ -209,13 +210,20 @@ export default function Highlighter() {
   const placePopRef = useRef(placePop);
   placePopRef.current = placePop;
 
-  const closeEditor = useCallback((restore = false) => {
-    setEdit((e) => {
-      if (e && noteTimer.current) { clearTimeout(noteTimer.current); noteTimer.current = 0; }
-      return null;
-    });
-    if (restore && opener.current instanceof HTMLElement && opener.current.isConnected) opener.current.focus();
+  // A note typed just before closing is sent now rather than dropped.
+  const flushNote = useCallback(() => {
+    clearTimeout(noteTimer.current);
+    noteTimer.current = 0;
+    const f = noteSave.current;
+    noteSave.current = null;
+    f?.();
   }, []);
+
+  const closeEditor = useCallback((restore = false) => {
+    flushNote();
+    setEdit(null);
+    if (restore && opener.current instanceof HTMLElement && opener.current.isConnected) opener.current.focus();
+  }, [flushNote]);
 
   // Selection, marks, keyboard and navigation listeners: registered once for the session.
   useEffect(() => {
@@ -367,17 +375,18 @@ export default function Highlighter() {
   const saveNote = (id: number, v: string) => {
     clearTimeout(noteTimer.current);
     setNoteState('Saving…');
-    noteTimer.current = window.setTimeout(async () => {
-      noteTimer.current = 0;
+    noteSave.current = async () => {
       const r = await fetch('/api/highlights', { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ id, note: v }), keepalive: true }).catch(() => null);
       const h = hls.current.get(id);
       if (r?.ok && h) { h.note = v; decorate(id, v); setNoteState('Saved'); } else setNoteState('Not saved. Keep typing to retry.');
-    }, 600);
+    };
+    noteTimer.current = window.setTimeout(flushNote, 600);
   };
 
   const remove = async () => {
     const h = edit && hls.current.get(edit.id);
     if (!h) return;
+    noteSave.current = null; // the highlight is going away with its note
     unwrap(h.id);
     hls.current.delete(h.id);
     closeEditor();

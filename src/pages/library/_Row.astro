@@ -18,7 +18,7 @@ const [typeLabel, icon] = TYPE[info.type] ?? ['Item', 'Circle'];
   <div class="acts">
     <slot />
     {mark && (
-      <button type="button" class="btn btn-sm btn-ghost mk !px-2" data-mark={mark} data-type={info.type} data-id={info.id} aria-pressed="true"
+      <button type="button" class="btn btn-sm btn-ghost mk rowmark !px-2" data-mark={mark} data-type={info.type} data-id={info.id} aria-pressed="true"
         aria-label={`${mark === 'bookmark' ? 'Bookmark' : 'Weak spot'}: ${info.id}`} title={mark === 'bookmark' ? 'Remove bookmark (click again to undo)' : 'Remove weak mark (click again to undo)'}>
         <Icon name={mark === 'bookmark' ? 'Bookmark' : 'Flag'} size={15} />
       </button>
@@ -29,7 +29,7 @@ const [typeLabel, icon] = TYPE[info.type] ?? ['Item', 'Circle'];
 <style>
   .lrow { display: flex; align-items: flex-start; gap: 0.9rem; padding: 0.85rem 1rem; transition: background-color var(--d1), opacity var(--d3); }
   .lrow:hover { background: color-mix(in oklab, var(--ink) 3%, transparent); }
-  .lrow:has(.acts [data-mark][aria-pressed="false"]) { opacity: 0.55; }
+  .lrow:has(.rowmark[aria-pressed="false"]) { opacity: 0.55; } /* removed from this list; click again to undo */
   .lead { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 11px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); overflow: hidden; }
   .lead.img { width: 3.5rem; height: 3.5rem; border-radius: 10px; }
   .lead img { width: 100%; height: 100%; object-fit: cover; }

@@ -7,6 +7,7 @@ const btnKey = (b: HTMLElement) => key(b.dataset.mark!, b.dataset.type!, b.datas
 let marks = new Set<string>();
 let version = 0;
 let inflight: Promise<void> | null = null;
+let chain: Promise<unknown> = Promise.resolve(); // saves go out one at a time, so a quick double press lands in order
 const subs = new Set<() => void>();
 const MSG: Record<string, [string, string]> = { bookmark: ['Bookmarked', 'Bookmark removed'], weak: ['Marked as a weak spot', 'Weak mark removed'] };
 
@@ -35,7 +36,9 @@ async function toggle(b: HTMLElement) {
   b.classList.remove('mk-pop'); void b.offsetWidth; b.classList.add('mk-pop');
   navigator.vibrate?.(8);
   try {
-    const r = await fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, id, kind, on }) });
+    const req = chain.then(() => fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, id, kind, on }) }));
+    chain = req.catch(() => {});
+    const r = await req;
     if (!r.ok) throw new Error(String(r.status));
     toast(MSG[kind!]?.[on ? 0 : 1] ?? 'Saved', 'ok');
   } catch {

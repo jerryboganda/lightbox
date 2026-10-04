@@ -70,6 +70,11 @@ describe('collections', () => {
     expect(listCollections(me, item(me, 'fact', facts[3].id))[0].has).toBe(0);
     expect(reorderCollection(me, cid, [{ type: 'topic', id: b.id }, { type: 'fact', id: a.id }])).toBe(true);
     expect(getCollection(me, cid)!.items.map((i) => i.id)).toEqual([b.id, a.id]);
+    const c = item(me, 'mcq', mcqs[0].qid)!;
+    setCollectionItem(me, cid, c, true);
+    expect(reorderCollection(me, cid, [c])).toBe(true); // unlisted items follow in their old order
+    expect(getCollection(me, cid)!.items.map((i) => i.id)).toEqual([c.id, b.id, a.id]);
+    setCollectionItem(me, cid, c, false);
 
     expect(getCollection(other, cid)).toBeNull(); // private
     expect(updateCollection(other, cid, { shared: true })).toBe('missing');
@@ -145,8 +150,10 @@ describe('user cards in the FSRS queue', () => {
     expect(due.due.map((d) => d.factId)).toContain(`U${id}`);
     expect(due.custom[`U${id}`].front).toBe('New front');
 
+    saveNote(me, item(me, 'card', `U${id}`)!, 'Card note');
     expect(deleteUserCard(other, id)).toBe(false);
     expect(deleteUserCard(me, id)).toBe(true);
+    expect(listNotes(me).some((n) => n.id === `U${id}`)).toBe(false); // no orphan note left counting in the library
     expect(srsQueue(me).due.map((d) => d.factId)).not.toContain(`U${id}`);
     expect(srsReview(me, `U${id}`, Rating.Good, Date.now(), '')).toBe(false);
   });

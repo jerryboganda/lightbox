@@ -100,8 +100,8 @@ export default function Flashcards() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       // Buttons and links keep their own Enter/Space; the card face (role=button) and the page body drive the session.
-      if (/input|textarea|select/i.test(t.tagName) || e.metaKey || e.ctrlKey || e.altKey || (t.closest?.('button, a, [role="dialog"], dialog') && !t.classList.contains('flip'))) return;
-      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!flipped) setFlipped(true); else rate(Rating.Good); }
+      if (/input|textarea|select/i.test(t.tagName) || e.metaKey || e.ctrlKey || e.altKey || t.closest?.('[role="dialog"], dialog')) return;
+      if ((e.key === ' ' || e.key === 'Enter') && !t.closest?.('button, a')) { e.preventDefault(); if (!flipped) setFlipped(true); else rate(Rating.Good); }
       const r = RATINGS.find(([, , k]) => k === e.key);
       if (r && flipped) rate(r[0]);
     };
@@ -132,7 +132,8 @@ export default function Flashcards() {
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-sunk"><motion.div className="h-full rounded-full bg-accent" animate={{ width: `${(done.n / total) * 100}%` }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }} /></div>
         {info?.own && <span className="badge s-edition">your card</span>}
         {cur.isNew ? <span className="badge s-agreed">new</span> : <span className="badge s-neutral">review</span>}
-        <button type="button" className="btn btn-sm btn-ghost mk !h-7 !px-1.5" data-mark="weak" data-type={info?.own ? 'card' : 'fact'} data-id={cur.factId} aria-pressed="false" aria-label={`Mark ${cur.factId} as a weak spot`} title="Mark as a weak spot"><Flag size={15} aria-hidden="true" /></button>
+        {/* Keyed per card: a fresh node gets painted by the marks script instead of keeping the last card's state. */}
+        <button key={cur.factId} type="button" className="btn btn-sm btn-ghost mk !h-7 !px-1.5" data-mark="weak" data-type={info?.own ? 'card' : 'fact'} data-id={cur.factId} aria-pressed="false" aria-label={`Mark ${cur.factId} as a weak spot`} title="Mark as a weak spot"><Flag size={15} aria-hidden="true" /></button>
         {pending > 0 && <span className="flex items-center gap-1 text-xs text-signal" title="Saved on this device; will sync"><CloudOff size={13} />{pending}</span>}
       </div>
       {focus === cur.factId && <p className="mt-3 flex items-center gap-1.5 text-xs text-accent"><Sparkles size={13} />Opened from a topic note</p>}

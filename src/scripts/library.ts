@@ -51,7 +51,7 @@ function armed(b: HTMLElement) {
 
 // Swap a collection row with its neighbour, animate the move (FLIP), and save the order shortly after.
 let orderTimer = 0;
-function move(b: HTMLElement, dir: number) {
+function move(b: HTMLButtonElement, dir: number) {
   const row = b.closest<HTMLElement>('[data-row]'), list = row?.parentElement;
   if (!row || !list) return;
   const other = (dir < 0 ? row.previousElementSibling : row.nextElementSibling) as HTMLElement | null;
@@ -62,8 +62,9 @@ function move(b: HTMLElement, dir: number) {
     row.animate([{ transform: `translateY(${r1.top - row.getBoundingClientRect().top}px)` }, { transform: 'none' }], { duration: 280, easing: 'cubic-bezier(0.16,1,0.3,1)' });
     other.animate([{ transform: `translateY(${r2.top - other.getBoundingClientRect().top}px)` }, { transform: 'none' }], { duration: 280, easing: 'cubic-bezier(0.16,1,0.3,1)' });
   }
-  b.focus();
   syncMoveButtons(list);
+  // At the top or bottom the pressed button turns off: keep keyboard focus on its partner.
+  (b.disabled ? b.parentElement?.querySelector<HTMLElement>('[data-act="move"]:not(:disabled)') : b)?.focus();
   clearTimeout(orderTimer);
   const cid = list.closest<HTMLElement>('[data-collection]')?.dataset.collection;
   orderTimer = window.setTimeout(() => {
@@ -81,7 +82,8 @@ function syncMoveButtons(list: Element) {
 
 async function act(b: HTMLElement) {
   const { act: a, id = '', type = '' } = b.dataset;
-  if (b.dataset.confirm && !armed(b)) return;
+  if (b.dataset.busy || (b.dataset.confirm && !armed(b))) return;
+  b.dataset.busy = '1'; // a double press must not copy or delete twice
   const row = b.closest('[data-row]');
   try {
     if (a === 'del-note') { await api(`/api/notes?type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}`, 'DELETE'); dropRow(row, 'notes'); toast('Note deleted', 'ok'); }
@@ -113,8 +115,9 @@ async function act(b: HTMLElement) {
       if (list) setTimeout(() => syncMoveButtons(list), 300);
       toast('Removed from the collection', 'ok');
     }
-    else if (a === 'move') move(b, Number(b.dataset.dir));
+    else if (a === 'move') move(b as HTMLButtonElement, Number(b.dataset.dir));
   } catch (e) { fail(e); }
+  delete b.dataset.busy;
 }
 
 async function submit(f: HTMLFormElement) {
