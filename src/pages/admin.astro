@@ -8,7 +8,7 @@ const me = Astro.locals.user!;
 let flash: { kind: 'ok' | 'bad'; text: string; secret?: { user: string; pw: string } } | null = null;
 
 if (Astro.request.method === 'POST') {
-  const f = await Astro.request.formData();
+  const f = await Astro.request.formData().catch(() => new FormData());
   const action = String(f.get('action')), id = Number(f.get('id'));
   const admins = () => (db.prepare("SELECT COUNT(*) n FROM users WHERE role = 'admin' AND disabled = 0").get() as any).n as number;
   const target = id ? (db.prepare('SELECT id, username, role, disabled FROM users WHERE id = ?').get(id) as any) : null;

@@ -5,6 +5,9 @@ import Status from '../../../components/Status.astro';
 import FactPop from '../../../components/FactPop.astro';
 import MarkToggle from '../../../components/MarkToggle.astro';
 import CollectMenu from '../../../components/islands/CollectMenu';
+import ReportButton from '../../../components/islands/ReportButton';
+import Thread from '../../../components/islands/Thread';
+import AiGenerate from '../../../components/islands/AiGenerate';
 import { factById, topics, topicBySlug, SYSTEMS, LABELS } from '../../../lib/data';
 import { noteVisit } from '../../../server/progress';
 import { compareWith } from '../../../server/study';
@@ -48,6 +51,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
           <span class="mx-0.5 h-5 w-px bg-line" aria-hidden="true"></span>
           <a href={`/study/compare?t=${t.slug}`} class="btn btn-sm btn-ghost max-sm:!px-2" title="Compare with other topics"><Icon name="Columns3" size={15} /><span class="max-sm:sr-only">Compare</span></a>
           <button type="button" class="btn btn-sm btn-ghost max-sm:!px-2" data-print title="Save as PDF"><Icon name="Printer" size={15} /><span class="max-sm:sr-only">Save as PDF</span></button>
+          <a href={`/tutor?topic=${t.slug}`} class="btn btn-sm btn-ghost max-sm:!px-2" title="Ask the AI tutor about this topic"><Icon name="Sparkles" size={15} /><span class="max-sm:sr-only">Ask tutor</span></a>
+          <AiGenerate client:visible topicSlug={t.slug} compact />
+          <ReportButton client:visible itemType="topic" itemId={t.slug} compact />
         </div>
       </header>
 
@@ -81,6 +87,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
         <p class="print-key">{(['cited', 'agreed', 'unchecked', 'disputed'] as const).map((l) => `${LABELS[l].text}: ${LABELS[l].hint.toLowerCase()}.`).join(' ')}</p>
         <p>Printed from {canonical} on {printedAt}.</p>
       </footer>
+
+      <section class="mt-12" data-no-print><Thread client:visible itemType="topic" itemId={t.slug} title="Discussion" /></section>
 
       <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More topics in this system" data-no-print>
         {prev ? <a href={`/study/${system}/${prev.slug}`} class="panel lift p-4"><span class="flex items-center gap-1 text-xs text-faint"><Icon name="ArrowLeft" size={13} />Previous</span><span class="mt-1 block truncate">{prev.title}</span></a> : <span></span>}

@@ -5,6 +5,7 @@ import Logo from '../components/Logo.astro';
 import Palette from '../components/islands/Palette';
 import Highlighter from '../components/islands/Highlighter';
 import StudyTimer from '../components/islands/StudyTimer';
+import NotificationBell from '../components/islands/NotificationBell';
 interface Props { title: string; crumbs?: { label: string; href?: string }[]; wide?: boolean }
 const { title, crumbs = [], wide = false } = Astro.props;
 const user = Astro.locals.user!;
@@ -18,7 +19,9 @@ const NAV = [
   { href: '/practice', label: 'Practice', icon: 'Target', group: 'Train' },
   { href: '/analytics', label: 'Analytics', icon: 'ChartNoAxesCombined', group: 'Train' },
   { href: '/library', label: 'Library', icon: 'Bookmark', group: 'You' },
-  { href: '/review', label: 'Review', icon: 'ShieldAlert', group: 'Check' },
+  { href: '/class', label: 'Class', icon: 'MessagesSquare', group: 'Class' },
+  { href: '/tutor', label: 'Tutor', icon: 'Sparkles', group: 'Class' },
+  { href: '/review', label: 'Review', icon: 'ShieldAlert', group: 'Class' },
 ];
 const TAB_HREFS = ['/', '/study', '/practice', '/library'];
 const TABS = NAV.filter((n) => TAB_HREFS.includes(n.href));
@@ -71,6 +74,7 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
         <button type="button" class="btn btn-ghost btn-sm !px-2" data-theme-toggle aria-label="Change theme">
           <span class="ti-sys"><Icon name="MonitorCog" size={18} /></span><span class="ti-light"><Icon name="Sun" size={18} /></span><span class="ti-dark"><Icon name="Moon" size={18} /></span>
         </button>
+        <NotificationBell client:idle transition:persist />
         <button type="button" class="avatar" popovertarget="usermenu" aria-label="Account menu">{initials}</button>
         <div id="usermenu" popover class="menu panel">
           <div class="px-3 py-2"><div class="font-medium">{user.displayName}</div><div class="text-xs text-muted num">@{user.username} · {user.role}</div></div>

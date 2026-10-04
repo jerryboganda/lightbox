@@ -173,6 +173,125 @@ const MIGRATIONS = [
    );
    ALTER TABLE mcq_attempts ADD COLUMN ms INTEGER;
    ALTER TABLE mcq_attempts ADD COLUMN source TEXT NOT NULL DEFAULT 'bank';`,
+  // v3: class (comments, votes, reports, polls, notifications) and AI. Comment item_type adds 'dispute'; vote item_type adds 'comment'.
+  `CREATE TABLE comments (
+     id INTEGER PRIMARY KEY,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     item_type TEXT NOT NULL,
+     item_id TEXT NOT NULL,
+     parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+     body TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     edited_at INTEGER,
+     deleted INTEGER NOT NULL DEFAULT 0,
+     hidden INTEGER NOT NULL DEFAULT 0,
+     hidden_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+     hidden_reason TEXT NOT NULL DEFAULT ''
+   );
+   CREATE INDEX comments_item ON comments(item_type, item_id, created_at);
+   CREATE INDEX comments_user ON comments(user_id, created_at);
+   CREATE TABLE votes (
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     item_type TEXT NOT NULL,
+     item_id TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (user_id, item_type, item_id)
+   );
+   CREATE INDEX votes_item ON votes(item_type, item_id);
+   CREATE TABLE reports (
+     id INTEGER PRIMARY KEY,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     item_type TEXT NOT NULL,
+     item_id TEXT NOT NULL,
+     kind TEXT NOT NULL CHECK (kind IN ('wrong','source','typo','unclear','duplicate','offensive','other')),
+     body TEXT NOT NULL DEFAULT '',
+     quote TEXT NOT NULL DEFAULT '',
+     path TEXT,
+     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','rejected','fixed')),
+     resolution TEXT NOT NULL DEFAULT '',
+     resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+     resolved_at INTEGER,
+     created_at INTEGER NOT NULL
+   );
+   CREATE INDEX reports_status ON reports(status, created_at);
+   CREATE TABLE notifications (
+     id INTEGER PRIMARY KEY,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     kind TEXT NOT NULL,
+     title TEXT NOT NULL,
+     body TEXT NOT NULL DEFAULT '',
+     href TEXT,
+     created_at INTEGER NOT NULL,
+     read_at INTEGER
+   );
+   CREATE INDEX notifications_user ON notifications(user_id, read_at, created_at);
+   CREATE TABLE polls (
+     id INTEGER PRIMARY KEY,
+     item_type TEXT NOT NULL DEFAULT 'custom' CHECK (item_type IN ('mcq','custom')),
+     item_id TEXT,
+     question TEXT NOT NULL,
+     options TEXT NOT NULL,
+     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+     created_at INTEGER NOT NULL,
+     closes_at INTEGER,
+     closed INTEGER NOT NULL DEFAULT 0,
+     UNIQUE (item_type, item_id)
+   );
+   CREATE TABLE poll_votes (
+     poll_id INTEGER NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     choice TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (poll_id, user_id)
+   );
+   CREATE TABLE ai_cache (
+     key TEXT PRIMARY KEY,
+     kind TEXT NOT NULL,
+     model TEXT NOT NULL,
+     body TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     hits INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE TABLE ai_usage (
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     day TEXT NOT NULL,
+     n INTEGER NOT NULL DEFAULT 0,
+     tokens INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (user_id, day)
+   );
+   CREATE TABLE ai_chats (
+     id INTEGER PRIMARY KEY,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     title TEXT NOT NULL,
+     context TEXT,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   );
+   CREATE INDEX ai_chats_user ON ai_chats(user_id, updated_at);
+   CREATE TABLE ai_messages (
+     id INTEGER PRIMARY KEY,
+     chat_id INTEGER NOT NULL REFERENCES ai_chats(id) ON DELETE CASCADE,
+     role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+     content TEXT NOT NULL,
+     cites TEXT NOT NULL DEFAULT '[]',
+     created_at INTEGER NOT NULL
+   );
+   CREATE INDEX ai_messages_chat ON ai_messages(chat_id, id);
+   CREATE TABLE ai_mcqs (
+     id INTEGER PRIMARY KEY,
+     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+     topic_slug TEXT,
+     fact_ids TEXT NOT NULL,
+     stem TEXT NOT NULL,
+     options TEXT NOT NULL,
+     key TEXT NOT NULL,
+     explanation TEXT NOT NULL DEFAULT '',
+     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+     reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+     reviewed_at INTEGER,
+     created_at INTEGER NOT NULL
+   );
+   CREATE INDEX ai_mcqs_status ON ai_mcqs(status, created_at);`,
 ];
 
 function open() {

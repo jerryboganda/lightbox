@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { changePassword } from '../../../server/auth';
 
 export const POST: APIRoute = async ({ request, locals, redirect }) => {
-  const f = await request.formData();
+  const f = await request.formData().catch(() => new FormData());
   const current = String(f.get('current') || ''), next = String(f.get('next') || ''), confirm = String(f.get('confirm') || '');
   const first = locals.user!.mustChange;
   const back = (q: string) => redirect(`/account?${first ? 'first=1&' : ''}${q}#password`, 303);

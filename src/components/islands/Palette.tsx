@@ -3,7 +3,7 @@ import { Command } from 'cmdk';
 import MiniSearch from 'minisearch';
 import { AnimatePresence, motion } from 'motion/react';
 import { navigate } from 'astro:transitions/client';
-import { BookOpenText, Bookmark, ChartNoAxesCombined, CircleHelp, Columns3, FileText, Image, LayoutDashboard, Layers, ListChecks, Maximize2, MoonStar, ScanEye, Search, ShieldAlert, Target, Timer, Images, UsersRound, CornerDownLeft } from 'lucide-react';
+import { Bell, Bot, MessagesSquare, Sparkles, BookOpenText, Bookmark, ChartNoAxesCombined, CircleHelp, Columns3, FileText, Image, LayoutDashboard, Layers, ListChecks, Maximize2, MoonStar, ScanEye, Search, ShieldAlert, Target, Timer, Images, UsersRound, CornerDownLeft } from 'lucide-react';
 
 type Doc = { id: string; type: 'topic' | 'fact' | 'mcq' | 'image'; title: string; text: string; href: string; label?: string };
 const TYPE = { topic: { icon: BookOpenText, name: 'Topics' }, fact: { icon: FileText, name: 'Facts' }, mcq: { icon: CircleHelp, name: 'MCQs' }, image: { icon: Image, name: 'Atlas' } };
@@ -65,6 +65,10 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
     { label: 'TOACS station mode', icon: ScanEye, run: () => go('/practice/toacs') },
     { label: 'Compare topics side by side', icon: Columns3, run: () => go('/study/compare') },
     { label: 'Browse source pages', icon: FileText, run: () => go('/sources') },
+    { label: 'Open the class hub and leaderboard', icon: MessagesSquare, run: () => go('/class') },
+    { label: 'Ask the AI tutor', icon: Sparkles, run: () => go('/tutor') },
+    { label: 'Practise AI-generated MCQs', icon: Bot, run: () => go('/practice/ai') },
+    { label: 'Open notifications', icon: Bell, run: () => go('/notifications') },
     { label: 'Start a focus timer', icon: Timer, run: () => { setOpen(false); window.dispatchEvent(new CustomEvent('lb:timer', { detail: 'start' })); } },
     { label: 'Toggle focus mode', icon: Maximize2, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-focus-toggle]')?.click(); } },
     { label: 'Change theme', icon: MoonStar, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-theme-toggle]')?.click(); } },

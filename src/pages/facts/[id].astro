@@ -7,6 +7,9 @@ import NotFound from '../../components/NotFound.astro';
 import PageText from '../../components/PageText.astro';
 import NotePad from '../../components/islands/NotePad';
 import CollectMenu from '../../components/islands/CollectMenu';
+import ReportButton from '../../components/islands/ReportButton';
+import Thread from '../../components/islands/Thread';
+import AiExplain from '../../components/islands/AiExplain';
 import { factById, isEditionClash, LABELS, SYSTEMS, shortFile, type Fact } from '../../lib/data';
 import { bestMatch, pageText, segment, sourceHref, textLabel, unitsByFile, unitWord } from '../../lib/sources';
 import { factContext, inPlayer } from '../../server/study';
@@ -58,7 +61,9 @@ const groups = d ? ([['On the same page', d.samePage], ['In the same topic', d.s
           <MarkToggle type="fact" id={d.f.id} kind="weak" />
           <CollectMenu client:visible itemType="fact" itemId={d.f.id} />
           <button type="button" class="btn btn-sm btn-ghost" data-copy-link><Icon name="Link" size={15} />Copy link</button>
+          <ReportButton client:visible itemType="fact" itemId={d.f.id} />
         </div>
+        <div class="mt-4" data-no-print><AiExplain client:visible factId={d.f.id} /></div>
       </header>
 
       <div class="ph-tabs reveal" style="--i:1" role="tablist" aria-label="Fact details" data-tabs>
@@ -161,6 +166,8 @@ const groups = d ? ([['On the same page', d.samePage], ['In the same topic', d.s
           <NotePad client:visible itemType="fact" itemId={d.f.id} title={d.f.id} />
         </aside>
       </div>
+
+      <section class="mt-12" data-no-print><Thread client:visible itemType="fact" itemId={d.f.id} title="Discussion" /></section>
 
       <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="Previous and next fact" data-no-print>
         {d.prev ? <a href={`/facts/${d.prev.id}`} class="panel lift p-4"><span class="flex items-center gap-1 text-xs text-muted"><Icon name="ArrowLeft" size={13} />Previous · <span class="num">{d.prev.id}</span></span><span class="mt-1 line-clamp-2 block text-sm">{d.prev.fact}</span></a> : <span></span>}

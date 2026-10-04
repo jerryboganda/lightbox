@@ -4,7 +4,7 @@ import { COOKIE, login } from '../../../server/auth';
 const safeNext = (n: string | null) => (n && n.startsWith('/') && !n.startsWith('//') ? n : '/');
 
 export const POST: APIRoute = async ({ request, cookies, clientAddress, redirect }) => {
-  const form = await request.formData();
+  const form = await request.formData().catch(() => new FormData());
   const username = String(form.get('username') || '').trim();
   const password = String(form.get('password') || '');
   const next = safeNext(String(form.get('next') || ''));

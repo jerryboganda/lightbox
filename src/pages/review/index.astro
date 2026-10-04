@@ -2,6 +2,9 @@
 import App from '../../layouts/App.astro';
 import Icon from '../../components/Icon.astro';
 import Status from '../../components/Status.astro';
+import Poll from '../../components/islands/Poll';
+import Thread from '../../components/islands/Thread';
+import AiDisputeSummary from '../../components/islands/AiDisputeSummary';
 import { facts, mcqs, unreadable, isEditionClash } from '../../lib/data';
 
 const disputedMcqs = mcqs.filter((m) => m.verdict === 'DISPUTED');
@@ -45,6 +48,7 @@ const NAV = [
             {Object.entries(m.options).map(([l, t]) => <li class:list={['flex gap-2 rounded-lg px-2 py-1', { 'bg-signal/10': l === m.key, 'bg-accent/10': l === m.myAnswer && l !== m.key }]}><span class="num w-4 text-faint">{l}</span><span class="flex-1">{t}</span>{l === m.key && <span class="text-xs text-signal">key</span>}{l === m.myAnswer && <span class="text-xs text-accent">Lightbox</span>}</li>)}
           </ul>
           <p class="mt-3 text-sm text-muted">{m.note}</p>
+          <div class="mt-3 space-y-3"><AiDisputeSummary client:visible itemType="mcq" itemId={m.qid} /><Poll client:visible mcqQid={m.qid} compact /><Thread client:visible itemType="dispute" itemId={m.qid} compact /></div>
           <div class="mt-auto flex flex-wrap items-center gap-2 pt-4">
             {urls(m.evidence).slice(0, 3).map((u) => <a href={u} target="_blank" rel="noopener noreferrer" class="chip"><Icon name="ExternalLink" size={13} />{host(u)}</a>)}
             <a href={`/practice/mcq?q=${m.qid}`} class="btn btn-sm ml-auto">Try it<Icon name="ArrowRight" size={14} /></a>
@@ -57,7 +61,7 @@ const NAV = [
   <section id="open" class="sec">
     <h2>Open disputes</h2>
     <p class="lede">The paper's version is kept next to the verified one.</p>
-    <ul class="mt-4 space-y-3">{open.map((f) => <li class="panel p-5"><div class="flex flex-wrap items-center gap-2 text-xs text-faint"><span class="num">{f.id}</span><Status label={f.label} /><span>{f.file} p{f.unit}</span></div><p class="mt-2 leading-relaxed">{f.fact}</p><p class="mt-2 text-sm text-muted">{f.note}</p></li>)}</ul>
+    <ul class="mt-4 space-y-3">{open.map((f) => <li class="panel p-5"><div class="flex flex-wrap items-center gap-2 text-xs text-faint"><span class="num">{f.id}</span><Status label={f.label} /><span>{f.file} p{f.unit}</span></div><p class="mt-2 leading-relaxed">{f.fact}</p><p class="mt-2 text-sm text-muted">{f.note}</p><div class="mt-3 space-y-3"><AiDisputeSummary client:visible itemType="fact" itemId={f.id} /><Thread client:visible itemType="dispute" itemId={f.id} compact /></div></li>)}</ul>
   </section>
 
   <section id="paper" class="sec">
