@@ -1,0 +1,6 @@
+---
+import { fileFromSlug, sourceHref, unitsByFile } from '../../../lib/sources';
+const file = fileFromSlug(Astro.params.file ?? '');
+const units = file ? unitsByFile.get(file)! : [];
+return Astro.redirect(file ? sourceHref(file, (units.find((u) => u.status === 'facts') ?? units[0]).page)! : '/sources');
+---

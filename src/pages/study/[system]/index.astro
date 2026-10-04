@@ -13,11 +13,16 @@ const list = topics.filter((t) => t.system === system).map((t) => {
 }).sort((a, b) => a.t.title.localeCompare(b.t.title));
 ---
 <App title={meta.label} crumbs={[{ label: 'Study', href: '/study' }]}>
-  <header class="reveal flex items-start gap-4" style="--i:0">
-    <span class="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent"><Icon name={meta.icon} size={24} /></span>
-    <div>
-      <h1 class="text-2xl font-medium">{meta.label}</h1>
-      <p class="mt-1 text-muted">{meta.blurb}. <span class="num">{list.length}</span> topics, <span class="num">{list.reduce((a, x) => a + x.n, 0)}</span> linked facts.</p>
+  <header class="reveal flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" style="--i:0">
+    <div class="flex items-start gap-4">
+      <span class="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent"><Icon name={meta.icon} size={24} /></span>
+      <div>
+        <h1 class="text-2xl font-medium">{meta.label}</h1>
+        <p class="mt-1 text-muted">{meta.blurb}. <span class="num">{list.length}</span> topics, <span class="num">{list.reduce((a, x) => a + x.n, 0)}</span> linked facts.</p>
+      </div>
+    </div>
+    <div class="shrink-0 max-sm:pl-16">
+      <a href={`/study/${system}/print`} class="btn btn-sm"><Icon name="Printer" size={15} />Print all</a>
     </div>
   </header>
   <ul class="mt-6 grid gap-3 md:grid-cols-2">

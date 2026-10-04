@@ -1,0 +1,110 @@
+---
+import App from '../../../layouts/App.astro';
+import Icon from '../../../components/Icon.astro';
+import Status from '../../../components/Status.astro';
+import { factById, LABELS, SYSTEMS, topics } from '../../../lib/data';
+
+const { system } = Astro.params;
+const meta = SYSTEMS[system!];
+if (!meta) return Astro.redirect('/study');
+const list = topics.filter((t) => t.system === system).sort((a, b) => a.title.localeCompare(b.title));
+const ids = [...new Set(list.flatMap((t) => t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids))))];
+const fs = ids.map((id) => factById.get(id)).filter((f) => !!f);
+const sources = [...new Set(fs.flatMap((f) => f.sources))].sort();
+const files = [...new Set(fs.map((f) => f.file))].sort();
+const printedAt = new Date(Date.now() + 5 * 3_600_000).toISOString().slice(0, 10);
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+---
+<App title="Printable notes" crumbs={[{ label: meta.label, href: `/study/${system}` }]}>
+  <div class="bar reveal" style="--i:0" data-no-print>
+    <div class="min-w-0 flex-[1_1_18rem]">
+      <h1 class="text-lg font-medium">Printable notes</h1>
+      <p class="text-sm text-muted">All <span class="num">{list.length}</span> {meta.label} topics as one document. Choose "Save as PDF" as the printer to keep a copy.</p>
+    </div>
+    <button type="button" class="btn btn-primary shrink-0" data-print><Icon name="Printer" size={16} />Print or save as PDF</button>
+  </div>
+
+  <article class="doc panel reveal" style="--i:1">
+    <header class="cover">
+      <p class="kick">Lightbox · FCPS-II radiology · topic notes</p>
+      <h2 class="title">{meta.label}</h2>
+      <p class="mt-2 text-muted">{meta.blurb}. <span class="num">{list.length}</span> topics, <span class="num">{fs.length}</span> linked facts.</p>
+      <p class="mt-1 text-sm text-muted">Generated {printedAt}. Each line shows its verification status in words and the IDs of the facts behind it.</p>
+      <dl class="key">
+        {(['cited', 'agreed', 'unchecked', 'disputed'] as const).map((l) => <div><dt><Status label={l} /></dt><dd>{LABELS[l].hint}</dd></div>)}
+      </dl>
+      <h3 class="toc-h">Contents</h3>
+      <ol class="toc">{list.map((t) => <li><a href={`#${t.slug}`}>{t.title}</a></li>)}</ol>
+    </header>
+
+    {list.map((t) => (
+      <section class="topic" id={t.slug} aria-labelledby={`h-${t.slug}`}>
+        <h2 id={`h-${t.slug}`} class="t-title">{t.title}</h2>
+        <p class="t-one">{t.oneLiner}</p>
+        {t.sections.map((s) => (
+          <>
+            <h3 class="s-head">{s.heading}</h3>
+            <ul class="bullets">
+              {s.bullets.map((b) => (
+                <li class="pbullet">
+                  <span>{b.text}</span>
+                  <span class="meta"><Status label={b.label} />{b.ids.length > 0 && <span class="num ids">{b.ids.join(', ')}</span>}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ))}
+      </section>
+    ))}
+
+    <section class="topic refs" aria-labelledby="refs-h">
+      <h2 id="refs-h" class="t-title">Sources</h2>
+      {sources.length > 0 && <><h3 class="s-head">Checked against</h3><ul class="refl">{sources.map((u) => <li>{u}</li>)}</ul></>}
+      <h3 class="s-head">From the papers</h3>
+      <ul class="refl">{files.map((f) => <li>{f}</li>)}</ul>
+      <p class="foot">Printed from {canonical} on {printedAt}.</p>
+    </section>
+  </article>
+</App>
+
+<script>
+  // onclick, not addEventListener: the topic and print pages both bind [data-print] after every swap.
+  function init() { document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => { b.onclick = () => window.print(); }); }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; max-width: 52rem; margin: 0 auto; }
+  .doc { max-width: 52rem; margin: 1.25rem auto 0; padding: clamp(1.25rem, 4vw, 3.25rem); }
+  .kick { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .title { margin-top: 0.5rem; font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); font-weight: 500; line-height: 1.1; }
+  .key { display: grid; gap: 0.4rem; margin-top: 1.5rem; padding: 1rem; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 0.8125rem; }
+  .key div { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); align-items: center; gap: 0.75rem; }
+  .key dd { color: var(--muted); }
+  .toc-h { margin-top: 2rem; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+  .toc { margin-top: 0.6rem; columns: 2 16rem; column-gap: 2rem; list-style: decimal; padding-left: 2.25rem; font-size: 0.9rem; }
+  .toc li { padding: 0.15rem 0; break-inside: avoid; }
+  .toc li::marker { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+  .toc a:hover { color: var(--accent); }
+  .topic { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--line); scroll-margin-top: 5rem; }
+  .t-title { font-size: 1.45rem; font-weight: 500; line-height: 1.2; }
+  .t-one { margin-top: 0.4rem; color: var(--muted); }
+  .s-head { margin-top: 1.4rem; font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.03em; color: var(--ink); }
+  .bullets { margin-top: 0.5rem; display: grid; gap: 0.55rem; padding-left: 1.1rem; list-style: disc; }
+  .bullets li::marker { color: var(--muted); }
+  .meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-left: 0.45rem; vertical-align: 1px; }
+  .ids { font-size: 0.6875rem; color: var(--muted); }
+  .refl { margin-top: 0.4rem; padding-left: 1.1rem; list-style: disc; font-size: 0.8125rem; color: var(--muted); overflow-wrap: anywhere; display: grid; gap: 0.2rem; }
+  .foot { margin-top: 1.5rem; font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
+  @media print {
+    .doc { max-width: none; margin: 0; padding: 0; border: 0; }
+    .cover { break-after: page; }
+    .title { font-size: 26pt; }
+    .topic { margin-top: 16pt; padding-top: 12pt; border-top: 1px solid #ccc; break-inside: avoid; }
+    .cover + .topic { margin-top: 0; padding-top: 0; border: 0; }
+    .refs { break-before: page; break-inside: auto; border: 0; }
+    .t-title { font-size: 16pt; }
+    .s-head { font-size: 10pt; }
+  }
+</style>

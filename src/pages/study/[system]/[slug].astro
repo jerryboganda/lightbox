@@ -3,8 +3,12 @@ import App from '../../../layouts/App.astro';
 import Icon from '../../../components/Icon.astro';
 import Status from '../../../components/Status.astro';
 import FactPop from '../../../components/FactPop.astro';
-import { factById, topics, topicBySlug, SYSTEMS } from '../../../lib/data';
+import MarkToggle from '../../../components/MarkToggle.astro';
+import CollectMenu from '../../../components/islands/CollectMenu';
+import { factById, topics, topicBySlug, SYSTEMS, LABELS } from '../../../lib/data';
 import { noteVisit } from '../../../server/progress';
+import { compareWith } from '../../../server/study';
+import { sourceHref } from '../../../lib/sources';
 
 const { system, slug } = Astro.params;
 const t = topicBySlug.get(slug!);
@@ -14,23 +18,36 @@ noteVisit(Astro.locals.user!.id, 'topic', Astro.url.pathname, t.title);
 const ids = [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))];
 const fs = ids.map((id) => factById.get(id)!).filter(Boolean);
 const sources = [...new Set(fs.flatMap((f) => f.sources))];
-const files = [...new Set(fs.map((f) => `${f.file} p${f.unit}`))];
+const files = [...new Map(fs.map((f) => [`${f.file}|${f.unit}`, { label: `${f.file} p${f.unit}`, href: sourceHref(f.file, f.unit) }])).values()];
 const siblings = topics.filter((x) => x.system === system).sort((a, b) => a.title.localeCompare(b.title));
 const idx = siblings.findIndex((x) => x.slug === slug);
 const prev = siblings[idx - 1], next = siblings[idx + 1];
 const anchor = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const counts = ['cited', 'agreed', 'unchecked', 'disputed'].map((l) => [l, fs.filter((f) => f.label === l).length] as const).filter(([, n]) => n);
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+const peers = compareWith(t);
+const printedAt = new Date(Date.now() + 5 * 3_600_000).toISOString().slice(0, 10);
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
 ---
 <App title={t.title} crumbs={[{ label: 'Study', href: '/study' }, { label: SYSTEMS[t.system].label, href: `/study/${t.system}` }]}>
+  <div class="readbar" aria-hidden="true" data-no-print></div>
   <div class="reader">
     <article class="min-w-0">
       <header class="reveal" style="--i:0">
+        <p class="print-only print-kicker">Lightbox · {SYSTEMS[t.system].label} · topic note</p>
         <h1 class="text-[1.75rem] font-medium leading-tight sm:text-[2rem]">{t.title}</h1>
         <p class="mt-2 max-w-[65ch] text-[1.0625rem] text-muted">{t.oneLiner}</p>
         <div class="mt-4 flex flex-wrap items-center gap-2">
           {counts.map(([l, n]) => <span class={`badge s-${l}`}>{n} {l}</span>)}
           <span class="text-xs text-faint">from {files.length} source page{files.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="actions mt-4 flex flex-wrap items-center gap-1.5" data-no-print>
+          <MarkToggle type="topic" id={t.slug} kind="bookmark" />
+          <MarkToggle type="topic" id={t.slug} kind="weak" />
+          <CollectMenu client:visible itemType="topic" itemId={t.slug} />
+          <span class="mx-0.5 h-5 w-px bg-line" aria-hidden="true"></span>
+          <a href={`/study/compare?t=${t.slug}`} class="btn btn-sm btn-ghost max-sm:!px-2" title="Compare with other topics"><Icon name="Columns3" size={15} /><span class="max-sm:sr-only">Compare</span></a>
+          <button type="button" class="btn btn-sm btn-ghost max-sm:!px-2" data-print title="Save as PDF"><Icon name="Printer" size={15} /><span class="max-sm:sr-only">Save as PDF</span></button>
         </div>
       </header>
 
@@ -57,7 +74,15 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
         </section>
       ))}
 
-      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More topics in this system">
+      <footer class="print-only print-foot">
+        {sources.length > 0 && <><h2>Checked against</h2><ul>{sources.map((u) => <li>{u}</li>)}</ul></>}
+        <h2>From the papers</h2>
+        <ul>{files.map((f) => <li>{f.label}</li>)}</ul>
+        <p class="print-key">{(['cited', 'agreed', 'unchecked', 'disputed'] as const).map((l) => `${LABELS[l].text}: ${LABELS[l].hint.toLowerCase()}.`).join(' ')}</p>
+        <p>Printed from {canonical} on {printedAt}.</p>
+      </footer>
+
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More topics in this system" data-no-print>
         {prev ? <a href={`/study/${system}/${prev.slug}`} class="panel lift p-4"><span class="flex items-center gap-1 text-xs text-faint"><Icon name="ArrowLeft" size={13} />Previous</span><span class="mt-1 block truncate">{prev.title}</span></a> : <span></span>}
         {next && <a href={`/study/${system}/${next.slug}`} class="panel lift p-4 text-right"><span class="flex items-center justify-end gap-1 text-xs text-faint">Next<Icon name="ArrowRight" size={13} /></span><span class="mt-1 block truncate">{next.title}</span></a>}
       </nav>
@@ -83,8 +108,16 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
         )}
         <div>
           <h2 class="text-xs font-medium tracking-wide text-faint">From the papers</h2>
-          <ul class="mt-2 space-y-1 text-xs text-muted">{files.slice(0, 8).map((f) => <li class="truncate" title={f}>{f}</li>)}</ul>
+          <ul class="mt-2 space-y-1 text-xs text-muted">{files.slice(0, 8).map((p) => <li class="truncate" title={p.label}>{p.href ? <a href={p.href} class="hover:text-accent">{p.label}</a> : p.label}</li>)}</ul>
         </div>
+        {peers.length > 0 && (
+          <div>
+            <h2 class="text-xs font-medium tracking-wide text-faint">Compare with</h2>
+            <ul class="mt-2 space-y-0.5 text-sm">
+              {peers.map((p) => <li><a href={`/study/compare?t=${t.slug},${p.slug}`} class="peer"><Icon name="ArrowLeftRight" size={13} class="shrink-0 text-faint" /><span class="truncate">{p.title}</span></a></li>)}
+            </ul>
+          </div>
+        )}
       </div>
     </aside>
   </div>
@@ -100,8 +133,13 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
     links.forEach((l) => { const s = document.querySelector(l.hash); if (s) io.observe(s); });
     document.addEventListener('astro:before-swap', () => io.disconnect(), { once: true });
   }
-  toc();
-  document.addEventListener('astro:after-swap', toc);
+  function init() {
+    toc();
+    // onclick, not addEventListener: the topic and print pages both bind [data-print] after every swap.
+    document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => { b.onclick = () => window.print(); });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
 </script>
 
 <style>
@@ -113,5 +151,20 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
   .toc-link { display: block; padding: 0.2rem 0 0.2rem 0.75rem; border-left: 1px solid var(--line); color: var(--muted); transition: color var(--d1), border-color var(--d1); }
   .toc-link:hover { color: var(--ink); }
   .toc-link.on { color: var(--accent); border-color: var(--accent); }
+  .peer { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; color: var(--muted); transition: color var(--d1); }
+  .peer:hover { color: var(--accent); }
+  /* Reading progress: a hairline that fills along the topbar edge as the page scrolls. */
+  .readbar { position: fixed; z-index: 16; top: calc(3.75rem - 2px); left: 0; right: 0; height: 2px; background: var(--accent); transform-origin: left; transform: scaleX(0); pointer-events: none; }
+  /* Longhands on purpose: the CSS minifier folds `animation` + `animation-timeline` into one shorthand, which browsers reject. */
+  @supports (animation-timeline: scroll()) { .readbar { animation-name: read; animation-duration: auto; animation-timing-function: linear; animation-fill-mode: both; animation-timeline: scroll(root block); } }
+  @supports not (animation-timeline: scroll()) { .readbar { display: none; } }
+  @keyframes read { to { transform: scaleX(1); } }
   @media (max-width: 1023px) { .reader { grid-template-columns: 1fr; } .side { display: none; } }
+  @media (max-width: 767px) { .readbar { top: calc(3.4rem - 2px); } }
+  /* Focus mode: one centred column, a touch larger and airier. */
+  :global([data-focus="on"]) .reader { grid-template-columns: minmax(0, 1fr); max-width: 46rem; margin-inline: auto; }
+  :global([data-focus="on"]) .side { display: none; }
+  :global([data-focus="on"]) .point p { font-size: 1.0625rem; line-height: 1.85; }
+  :global([data-focus="on"]) .point .dot { margin-top: 0.78rem; }
+  :global([data-focus="on"]) .reader h1 { font-size: 2.15rem; }
 </style>

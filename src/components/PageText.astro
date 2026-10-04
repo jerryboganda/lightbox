@@ -1,0 +1,28 @@
+---
+// Verbatim page text, one row per source line. Segments carry data-s so scripts can light up a passage.
+// The caller wraps it in a scroll box with role="region", an aria-label and tabindex="0".
+import { segment, type Match } from '../lib/sources';
+interface Props { text: string; hl?: Match | null; marks?: Map<number, string> }
+const { text, hl = null, marks = new Map<number, string>() } = Astro.props;
+const lines = segment(text);
+const lit = (i: number) => !!hl && i >= hl.start && i <= hl.end;
+---
+<div class="ptext">
+  {lines.map((segs) => {
+    const m = segs.map((s) => marks.get(s.i)).find(Boolean);
+    return <div class:list={['ln', m && `m s-${m}`, { hit: segs.some((s) => lit(s.i)) }]}><span class="lt">{segs.map((s) => { const Tag = lit(s.i) ? 'mark' : 'span'; return <Tag data-s={s.i} class:list={[{ hl: lit(s.i), weak: lit(s.i) && !hl!.strong }]}>{s.text}</Tag>; })}</span></div>;
+  })}
+</div>
+<style>
+  .ptext { counter-reset: ln; font-size: 0.9rem; line-height: 1.75; overflow-wrap: anywhere; color: var(--ink); }
+  .ln { counter-increment: ln; display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); min-height: 1.75em; border-radius: 6px; }
+  .ln::before { content: counter(ln) / ""; font-family: var(--font-mono); font-size: 0.75rem; line-height: 2.1; color: var(--faint); text-align: right; padding-right: 0.95rem; user-select: none; transition: color var(--d2); }
+  .ln.m::before { color: color-mix(in oklab, var(--c) 75%, var(--faint)); }
+  .ln.hit::before, .ln:has(.on)::before { color: var(--accent); font-weight: 600; }
+  .lt { white-space: pre-wrap; tab-size: 4; }
+  .lt > * { border-radius: 4px; transition: background-color var(--d2) var(--ease), box-shadow var(--d2) var(--ease); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  mark { color: inherit; background: none; }
+  .hl, .on { background: color-mix(in oklab, var(--accent) 22%, transparent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 22%, transparent); }
+  .hl.weak { background: color-mix(in oklab, var(--signal) 18%, transparent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--signal) 18%, transparent); }
+  @media print { .hl, .on { background: #fff3b0 !important; box-shadow: none; } }
+</style>

@@ -1,0 +1,252 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Status from '../../components/Status.astro';
+import MarkToggle from '../../components/MarkToggle.astro';
+import NotFound from '../../components/NotFound.astro';
+import PageText from '../../components/PageText.astro';
+import NotePad from '../../components/islands/NotePad';
+import CollectMenu from '../../components/islands/CollectMenu';
+import { factById, isEditionClash, LABELS, SYSTEMS, shortFile, type Fact } from '../../lib/data';
+import { bestMatch, pageText, segment, sourceHref, textLabel, unitsByFile, unitWord } from '../../lib/sources';
+import { factContext, inPlayer } from '../../server/study';
+import { noteVisit } from '../../server/progress';
+
+const f = factById.get(Astro.params.id ?? '');
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
+const link = (u: string) => {
+  try {
+    const x = new URL(u), last = decodeURIComponent(x.pathname.replace(/\/$/, '').split('/').pop() || '');
+    return { host: x.hostname.replace(/^www\./, ''), path: last.slice(0, 60) };
+  } catch { return { host: u, path: '' }; }
+};
+let d = null;
+if (f) {
+  const text = pageText(f.file, f.unit) ?? '';
+  const lines = segment(text);
+  const lineOf = lines.flatMap((segs, li) => segs.map(() => li + 1));
+  const match = bestMatch(f.fact, lines.flat().map((s) => s.text));
+  d = { f, ...factContext(f), text, match, lineOf, clash: isEditionClash(f), word: unitWord(f.file), src: sourceHref(f.file, f.unit), row: unitsByFile.get(f.file)?.find((p) => p.page === f.unit) };
+  noteVisit(Astro.locals.user!.id, 'fact', Astro.url.pathname, `${f.id} · ${clip(f.fact, 80)}`);
+} else Astro.response.status = 404;
+const groups = d ? ([['On the same page', d.samePage], ['In the same topic', d.sameTopic]] as [string, Fact[]][]).filter(([, l]) => l.length) : [];
+---
+<App title={d ? d.f.id : 'Fact not found'} crumbs={[{ label: 'Facts', href: '/facts' }]}>
+  {d ? (
+    <>
+      <header class="hero reveal" style="--i:0">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="num text-sm text-muted">{d.f.id}</span>
+          <Status label={d.f.label} />
+          {d.clash && <Status label="edition" />}
+          <span class="badge s-neutral">{d.f.kind}</span>
+          {SYSTEMS[d.f.system] && <a href={`/study/${d.f.system}`} class="sys"><Icon name={SYSTEMS[d.f.system].icon} size={13} />{SYSTEMS[d.f.system].label}</a>}
+          <nav class="ml-auto flex gap-1 max-sm:hidden" aria-label="Neighbouring facts" data-no-print>
+            {d.prev ? <a href={`/facts/${d.prev.id}`} class="btn btn-sm btn-ghost !px-2" aria-label={`Previous fact, ${d.prev.id}`} title={`Previous: ${d.prev.id}`}><Icon name="ChevronLeft" size={17} /></a> : <span class="btn btn-sm btn-ghost !px-2 opacity-35" aria-hidden="true"><Icon name="ChevronLeft" size={17} /></span>}
+            {d.next ? <a href={`/facts/${d.next.id}`} class="btn btn-sm btn-ghost !px-2" aria-label={`Next fact, ${d.next.id}`} title={`Next: ${d.next.id}`}><Icon name="ChevronRight" size={17} /></a> : <span class="btn btn-sm btn-ghost !px-2 opacity-35" aria-hidden="true"><Icon name="ChevronRight" size={17} /></span>}
+          </nav>
+        </div>
+        <h1 class={`statement s-${d.f.label}`}>{d.f.fact}</h1>
+        {(d.f.paperDiffers || d.f.edition) && (
+          <div class="mt-5 grid gap-2.5 md:grid-cols-2">
+            {d.f.paperDiffers && <p class="callout s-unchecked"><Icon name="FileWarning" size={17} class="callout-i" /><span><span class="callout-k">Paper says. </span>{d.f.paperDiffers}</span></p>}
+            {d.f.edition && <p class:list={['callout', d.clash ? 's-edition' : 's-neutral']}><Icon name="BookMarked" size={17} class="callout-i" /><span><span class="callout-k">{d.clash ? 'Edition clash. ' : 'Edition. '}</span>{d.f.edition}</span></p>}
+          </div>
+        )}
+        <div class="mt-5 flex flex-wrap items-center gap-1.5" data-no-print>
+          <MarkToggle type="fact" id={d.f.id} kind="bookmark" />
+          <MarkToggle type="fact" id={d.f.id} kind="weak" />
+          <CollectMenu client:visible itemType="fact" itemId={d.f.id} />
+          <button type="button" class="btn btn-sm btn-ghost" data-copy-link><Icon name="Link" size={15} />Copy link</button>
+        </div>
+      </header>
+
+      <div class="ph-tabs reveal" style="--i:1" role="tablist" aria-label="Fact details" data-tabs>
+        <button type="button" role="tab" id="tab-v" aria-controls="pane-v" aria-selected="true">Verification</button>
+        <button type="button" role="tab" id="tab-p" aria-controls="pane-p" aria-selected="false" tabindex="-1">Original page</button>
+      </div>
+      <div class="duo" data-duo data-tab="v">
+        <section id="pane-v" class="panel pane reveal" style="--i:2" role="tabpanel" aria-labelledby="tab-v">
+          <h2 class="pane-h"><Icon name="ShieldCheck" size={17} class="text-accent" />Verification</h2>
+          <p class="mt-3 flex flex-wrap items-center gap-2 text-sm"><Status label={d.f.label} /><span class="text-muted">{LABELS[d.f.label].hint}.</span></p>
+          <div class="mt-5">
+            <h3 class="kicker">Checked against</h3>
+            {d.f.sources.length ? (
+              <ul class="mt-2 space-y-1.5">
+                {d.f.sources.map((u) => { const l = link(u); return <li><a href={u} target="_blank" rel="noopener noreferrer" class="srclink" title={u}><Icon name="ExternalLink" size={14} class="shrink-0 text-accent" /><span class="min-w-0 truncate"><span class="text-ink">{l.host}</span>{l.path && <span class="text-muted"> › {l.path}</span>}</span></a></li>; })}
+              </ul>
+            ) : <p class="mt-1.5 text-sm text-muted">No external source is recorded for this fact.</p>}
+            {d.f.accessDate && <p class="mt-2 text-xs text-muted">Accessed <span class="num">{d.f.accessDate}</span></p>}
+          </div>
+          {d.f.note && (
+            <div class="mt-5">
+              <h3 class="kicker">Verification note</h3>
+              <p class="mt-1.5 text-sm leading-relaxed text-muted">{d.f.note}</p>
+            </div>
+          )}
+          <div class="mt-5">
+            <h3 class="kicker">From the paper</h3>
+            {d.src ? <a href={`${d.src}#${d.f.id}`} class="srclink mt-1.5"><Icon name="FileText" size={14} class="shrink-0 text-accent" /><span class="min-w-0"><span class="block text-ink">{shortFile(d.f.file)} · {d.word} {d.f.unit}</span></span></a>
+              : <p class="mt-1.5 text-sm">{shortFile(d.f.file)} · {d.word} {d.f.unit}</p>}
+            <p class="mt-1 break-words text-xs text-muted">{d.f.file}</p>
+          </div>
+        </section>
+
+        <section id="pane-p" class="panel pane pane-p reveal" style="--i:3" role="tabpanel" aria-labelledby="tab-p">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 class="pane-h"><Icon name="ScrollText" size={17} class="text-accent" />Original page</h2>
+            <span class="text-xs text-muted">{d.word} <span class="num">{d.f.unit}</span>{d.row && <> · {textLabel(d.row.textSource, d.text)}</>}</span>
+            {d.src && <a href={`${d.src}#${d.f.id}`} class="tile-link ml-auto" data-no-print>Open page<Icon name="ArrowUpRight" size={14} /></a>}
+          </div>
+          <p class:list={['matchnote', d.match ? (d.match.strong ? 'is-strong' : 'is-weak') : 'is-none']}>
+            <Icon name={d.match ? (d.match.strong ? 'ScanSearch' : 'ScanEye') : 'SearchX'} size={15} class="shrink-0" />
+            {d.match
+              ? d.match.strong
+                ? <span>Best match highlighted at line{d.lineOf[d.match.start] === d.lineOf[d.match.end] ? ` ${d.lineOf[d.match.start]}` : `s ${d.lineOf[d.match.start]}–${d.lineOf[d.match.end]}`}.</span>
+                : <span>Closest wording highlighted at line {d.lineOf[d.match.start]}. It is a weak match, so read the whole page.</span>
+              : <span>{d.text ? 'No confident match on this page. The fact may be reworded, or come from an image or answer key.' : `No text was extracted for this ${d.word.toLowerCase()}.`}</span>}
+          </p>
+          {d.text && <div class="pbox" data-pbox tabindex="0" role="region" aria-label={`Text of ${shortFile(d.f.file)}, ${d.word.toLowerCase()} ${d.f.unit}`}><PageText text={d.text} hl={d.match} /></div>}
+        </section>
+      </div>
+
+      <div class="below">
+        <div class="min-w-0 space-y-8">
+          {groups.map(([title, list], gi) => (
+            <section class="reveal" style={`--i:${4 + gi}`}>
+              <h2 class="sec-h">{title}<span class="num text-muted">{list.length}</span></h2>
+              <ul class="mt-3 grid gap-2.5 sm:grid-cols-2">
+                {list.map((x) => (
+                  <li>
+                    <a href={`/facts/${x.id}`} class="panel lift press fcard">
+                      <span class="flex items-center gap-2"><span class={`dot s-${x.label}`} aria-hidden="true"></span><span class="num text-xs text-muted">{x.id}</span><span class="ml-auto"><Status label={x.label} /></span></span>
+                      <span class="mt-2 line-clamp-3 text-sm leading-relaxed">{x.fact}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          {!groups.length && <p class="reveal text-sm text-muted" style="--i:4">No other fact comes from this page or topic.</p>}
+        </div>
+
+        <aside class="min-w-0 space-y-6">
+          {d.card && (
+            <section class="panel reveal p-4" style="--i:5">
+              <h2 class="sec-h"><Icon name="Layers" size={16} class="text-accent" />Flashcard</h2>
+              <p class="mt-3 font-medium leading-snug">{d.card.front}</p>
+              <details class="card-back mt-3">
+                <summary class="btn btn-sm">Show answer</summary>
+                <p class="mt-3 border-t border-line pt-3 text-sm leading-relaxed text-muted">{d.card.back}</p>
+              </details>
+              <a href={`/practice/cards?focus=${d.f.id}`} class="tile-link mt-3">Review this card<Icon name="ArrowUpRight" size={14} /></a>
+            </section>
+          )}
+          {d.topics.length > 0 && (
+            <section class="reveal" style="--i:6">
+              <h2 class="sec-h"><Icon name="BookOpenText" size={16} class="text-accent" />In topic notes</h2>
+              <ul class="mt-2 divide-y divide-line">
+                {d.topics.map((t) => <li><a href={`/study/${t.system}/${t.slug}`} class="group flex items-center gap-3 py-2.5"><span class="min-w-0 flex-1"><span class="block truncate text-sm transition-colors group-hover:text-accent">{t.title}</span><span class="block truncate text-xs text-muted">{SYSTEMS[t.system]?.label}</span></span><Icon name="ArrowRight" size={15} class="shrink-0 text-faint transition-transform group-hover:translate-x-0.5" /></a></li>)}
+              </ul>
+            </section>
+          )}
+          {d.mcqs.length > 0 && (
+            <section class="reveal" style="--i:7">
+              <h2 class="sec-h"><Icon name="Target" size={16} class="text-accent" />MCQs from this page</h2>
+              <ul class="mt-2 divide-y divide-line">
+                {d.mcqs.map((m) => <li><a href={inPlayer(m) ? `/practice/mcq?q=${m.qid}` : undefined} class:list={['block py-2.5', { group: inPlayer(m) }]}><span class="num text-xs text-muted">{m.qid}</span><span class="mt-0.5 line-clamp-2 block text-sm transition-colors group-hover:text-accent">{m.stem}</span></a></li>)}
+              </ul>
+            </section>
+          )}
+          <NotePad client:visible itemType="fact" itemId={d.f.id} title={d.f.id} />
+        </aside>
+      </div>
+
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="Previous and next fact" data-no-print>
+        {d.prev ? <a href={`/facts/${d.prev.id}`} class="panel lift p-4"><span class="flex items-center gap-1 text-xs text-muted"><Icon name="ArrowLeft" size={13} />Previous · <span class="num">{d.prev.id}</span></span><span class="mt-1 line-clamp-2 block text-sm">{d.prev.fact}</span></a> : <span></span>}
+        {d.next && <a href={`/facts/${d.next.id}`} class="panel lift p-4 text-right"><span class="flex items-center justify-end gap-1 text-xs text-muted"><span class="num">{d.next.id}</span> · Next<Icon name="ArrowRight" size={13} /></span><span class="mt-1 line-clamp-2 block text-sm">{d.next.fact}</span></a>}
+      </nav>
+    </>
+  ) : <NotFound what="Fact" back="/facts" backLabel="Fact explorer" />}
+</App>
+
+<script>
+  import { toast } from '../../scripts/toast';
+  function reveal() {
+    const box = document.querySelector<HTMLElement>('[data-pbox]'), hl = box?.querySelector<HTMLElement>('.hl');
+    if (box && hl && box.clientHeight) box.scrollTop = Math.max(0, hl.offsetTop - box.clientHeight * 0.3);
+  }
+  function init() {
+    const duo = document.querySelector<HTMLElement>('[data-duo]');
+    if (!duo) return;
+    reveal();
+    const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-tabs] [role="tab"]')];
+    const pick = (b: HTMLButtonElement) => {
+      tabs.forEach((t) => { t.setAttribute('aria-selected', String(t === b)); t.tabIndex = t === b ? 0 : -1; });
+      duo.dataset.tab = b.id === 'tab-p' ? 'p' : 'v';
+      if (duo.dataset.tab === 'p') reveal();
+    };
+    tabs.forEach((b, i) => {
+      b.addEventListener('click', () => pick(b));
+      b.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        pick(n); n.focus();
+      });
+    });
+    document.querySelector('[data-copy-link]')?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(location.origin + location.pathname); toast('Link copied', 'ok'); }
+      catch { toast('Could not copy the link', 'bad'); }
+    });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .hero { padding-bottom: 0.25rem; }
+  .sys { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--muted); padding: 0.2rem 0.5rem; border-radius: 6px; transition: color var(--d1), background-color var(--d1); }
+  .sys:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 6%, transparent); }
+  .statement { position: relative; margin-top: 1rem; padding-left: 1.15rem; max-width: 56ch; font-size: clamp(1.25rem, 1.05rem + 0.9vw, 1.7rem); line-height: 1.38; font-weight: 500; letter-spacing: -0.015em; text-wrap: pretty; }
+  .statement::before { content: ""; position: absolute; left: 0; top: 0.2em; bottom: 0.2em; width: 3px; border-radius: 99px; background: var(--c); transform-origin: top; animation: draw var(--d4) var(--ease) both 120ms; }
+  @keyframes draw { from { transform: scaleY(0); } }
+  .callout { display: flex; gap: 0.65rem; padding: 0.75rem 0.9rem; border-radius: 12px; font-size: 0.875rem; line-height: 1.55; background: color-mix(in oklab, var(--c) 8%, transparent); border: 1px solid color-mix(in oklab, var(--c) 24%, transparent); }
+  .callout :global(.callout-i) { flex: none; margin-top: 0.15rem; color: color-mix(in oklab, var(--c) 80%, var(--ink)); }
+  .callout-k { font-weight: 600; color: color-mix(in oklab, var(--c) 76%, var(--ink)); }
+  .ph-tabs { display: none; }
+  .duo { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 1rem; margin-top: 1.75rem; align-items: start; }
+  .pane { padding: 1.15rem 1.25rem; }
+  .pane-h { display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; font-weight: 500; }
+  .kicker { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .srclink { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; padding: 0.4rem 0.55rem; margin: 0 -0.55rem; border-radius: 8px; transition: background-color var(--d1); }
+  .srclink:hover { background: color-mix(in oklab, var(--accent) 9%, transparent); }
+  .matchnote { display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem 0.7rem; border-radius: 9px; font-size: 0.8125rem; line-height: 1.5; }
+  .matchnote :global(svg) { margin-top: 0.15rem; }
+  .is-strong { background: var(--glow); color: color-mix(in oklab, var(--accent) 70%, var(--ink)); }
+  .is-weak { background: color-mix(in oklab, var(--signal) 10%, transparent); color: color-mix(in oklab, var(--signal) 78%, var(--ink)); }
+  .is-none { background: var(--sunk); color: var(--muted); }
+  .pbox { position: relative; margin-top: 0.75rem; max-height: min(34rem, 62vh); overflow: auto; padding: 0.6rem 0.75rem 0.6rem 0; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); scroll-behavior: smooth; overscroll-behavior: contain; }
+  .tile-link { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1); }
+  .tile-link:hover { color: var(--accent); }
+  .below { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: 2.5rem; margin-top: 2.5rem; }
+  .sec-h { display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem; font-weight: 500; }
+  .fcard { display: flex; flex-direction: column; height: 100%; padding: 0.85rem 1rem; }
+  .dot { width: 0.45rem; height: 0.45rem; border-radius: 99px; background: var(--c); box-shadow: 0 0 0 3px color-mix(in oklab, var(--c) 18%, transparent); }
+  .card-back summary { list-style: none; width: fit-content; }
+  .card-back summary::-webkit-details-marker { display: none; }
+  .card-back[open] summary { display: none; }
+  .card-back[open] p { animation: rise var(--d3) var(--ease); }
+  @media (max-width: 1023px) { .below { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 767px) {
+    .ph-tabs { display: flex; margin-top: 1.5rem; padding: 3px; gap: 2px; border-radius: 11px; background: var(--sunk); border: 1px solid var(--line); }
+    .ph-tabs button { flex: 1; height: 2.25rem; border-radius: 8px; font-size: 0.875rem; color: var(--muted); transition: color var(--d1), background-color var(--d2) var(--ease); }
+    .ph-tabs button[aria-selected="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 0 var(--line-strong), 0 2px 8px -4px rgb(0 0 0 / 0.4); }
+    .duo { grid-template-columns: minmax(0, 1fr); margin-top: 0.75rem; }
+    .duo[data-tab="v"] .pane-p, .duo[data-tab="p"] #pane-v { display: none; }
+    .pane { padding: 1rem; }
+    .pbox { max-height: 62vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { .statement::before { animation: none; } .pbox { scroll-behavior: auto; } }
+  :global([data-motion="reduced"]) .statement::before { animation: none; }
+  :global([data-motion="reduced"]) .pbox { scroll-behavior: auto; }
+</style>
