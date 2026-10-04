@@ -1,0 +1,43 @@
+/* Analytics charts: card shell, plot frame, legend, tooltip, first-run ghost. Animations scale with --move (0 when reduced). */
+.ch-card { position: relative; display: flex; flex-direction: column; padding: 1.25rem 1.35rem 1.2rem; min-width: 0; }
+.ch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem 1rem; flex-wrap: wrap; }
+.ch-title { font-size: 0.95rem; font-weight: 500; }
+.ch-take { margin-top: 0.2rem; font-size: 0.8125rem; color: var(--muted); max-width: 52ch; }
+.ch-body { position: relative; margin-top: 1.1rem; flex: 1; min-width: 0; }
+.ch-ghost > :not(.ch-empty) { opacity: 0.32; filter: saturate(0.2); pointer-events: none; user-select: none; mask-image: linear-gradient(to bottom, #000 30%, transparent 105%); }
+.ch-empty { position: absolute; inset: 0; isolation: isolate; display: grid; place-content: center; justify-items: center; gap: 0.7rem; padding: 1rem; text-align: center; }
+.ch-empty::before { content: ""; position: absolute; inset: 8% 4%; z-index: -1; background: radial-gradient(closest-side, var(--panel) 62%, transparent); }
+.ch-empty p { max-width: 30ch; font-size: 0.875rem; color: var(--ink); text-wrap: balance; }
+.ch-empty .ch-empty-ic { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 12px; color: var(--accent); background: var(--glow); border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent); }
+.ch-foot { margin-top: 1rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1.25rem; font-size: 0.75rem; color: var(--muted); }
+.ch-key { display: inline-flex; align-items: center; gap: 0.4rem; }
+.ch-key i { width: 0.7rem; height: 0.7rem; border-radius: 3px; background: var(--c); }
+.ch-stat { font-size: 0.75rem; color: var(--muted); }
+.ch-stat b { font-family: var(--font-mono); font-weight: 500; font-size: 1.05rem; color: var(--ink); margin-right: 0.2rem; }
+
+/* Plot frame: HTML bars and dots over a stretched SVG line, so text and dots never distort. */
+.pl-wrap { container-type: inline-size; padding-top: 0.5rem; }
+.pl { position: relative; height: 11rem; margin-left: 2.4rem; }
+.pl-grid { position: absolute; inset: 0; pointer-events: none; }
+.pl-grid span { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line); }
+.pl-grid span[data-dash] { border-top: 1px dashed color-mix(in oklab, var(--signal) 70%, transparent); }
+.pl-grid em { position: absolute; right: calc(100% + 0.5rem); top: 0; translate: 0 -50%; font-style: normal; font-size: 0.6875rem; font-family: var(--font-mono); color: var(--muted); white-space: nowrap; }
+.pl-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; animation: pl-reveal calc(1.1s * var(--move)) var(--ease) both 0.15s; }
+@keyframes pl-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.pl-cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); align-items: end; }
+.pl-cols > span { display: flex; justify-content: center; align-items: flex-end; height: 100%; }
+.pl-bar { width: min(62%, 1.6rem); border-radius: 4px 4px 1px 1px; transform-origin: bottom; animation: pl-grow calc(0.7s * var(--move)) var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms + 100ms); }
+@keyframes pl-grow { from { transform: scaleY(0); } }
+.pl-dot { position: absolute; width: 0.6rem; height: 0.6rem; translate: -50% -50%; border-radius: 99px; background: var(--panel); border: 2px solid var(--accent); animation: pl-pop calc(0.4s * var(--move)) var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms + 500ms); }
+@keyframes pl-pop { from { transform: scale(0); opacity: 0; } }
+.pl-hits { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+.pl-hits > span { position: relative; outline-offset: -2px; border-radius: 6px; }
+.pl-hits > span::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line-strong); opacity: 0; transition: opacity var(--d1); }
+.pl-hits > span:hover::after, .pl-hits > span.is-tip::after, .pl-hits > span:focus-visible::after { opacity: 1; }
+.pl-x { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); margin: 0.45rem 0 0 2.4rem; font-size: 0.6875rem; color: var(--muted); text-align: center; white-space: nowrap; }
+.pl-x span[data-now] { color: var(--accent); }
+@container (max-width: 30rem) { .pl-x[data-thin] span:nth-child(odd):not(:last-child) { visibility: hidden; } }
+
+/* Tooltip (one per page, src/scripts/charts.ts) */
+#ch-tip { position: fixed; left: 0; top: 0; z-index: 70; max-width: min(18rem, calc(100vw - 1rem)); padding: 0.45rem 0.65rem; border-radius: 9px; font-size: 0.8125rem; line-height: 1.4; color: var(--ink); background: var(--raised); border: 1px solid var(--line-strong); box-shadow: var(--shadow); pointer-events: none; opacity: 0; transition: opacity var(--d1); }
+#ch-tip[data-on] { opacity: 1; }

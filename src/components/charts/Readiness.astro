@@ -1,0 +1,50 @@
+---
+interface Part { key: string; label: string; weight: number; value: number | null; note: string }
+interface Props { score: number; parts: Part[]; compact?: boolean }
+const { score, parts, compact = false } = Astro.props;
+const size = compact ? 92 : 140, sw = compact ? 8 : 10, r = (size - sw) / 2, C = 2 * Math.PI * r;
+const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v * 100)}%`);
+---
+<div class:list={['rdy', { compact }]}>
+  <div class="rdy-gauge" style={`width:${size}px;height:${size}px`}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} class="-rotate-90" aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--sunk)" stroke-width={sw} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--accent)" stroke-width={sw} stroke-linecap="round" stroke-dasharray={C} style={`--off:${C * (1 - score / 100)};--full:${C}`} class="rdy-arc" />
+    </svg>
+    <p class="rdy-num"><span class="num" data-count={score}>{score}</span><span class="rdy-of">/100</span></p>
+  </div>
+  <ul class="rdy-parts" aria-label="Readiness parts">
+    {parts.map((p, i) => (
+      <li>
+        <div class="rdy-row"><span class="rdy-label">{p.label}{!compact && <span class="rdy-w num">×{p.weight.toFixed(2)}</span>}</span><span class="num rdy-v">{pct(p.value)}</span></div>
+        <span class="rdy-meter" aria-hidden="true"><span style={`--w:${p.value ?? 0};--i:${i}`}></span></span>
+        {!compact && <p class="rdy-note">{p.note}</p>}
+      </li>
+    ))}
+  </ul>
+</div>
+
+<style>
+  .rdy { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1.5rem; align-items: center; }
+  .rdy-gauge { position: relative; flex: none; }
+  .rdy-arc { stroke-dashoffset: var(--off); animation: rdy-ring calc(1.2s * var(--move)) var(--ease) both 0.2s; }
+  @keyframes rdy-ring { from { stroke-dashoffset: var(--full); } }
+  .rdy-num { position: absolute; inset: 0; display: flex; align-items: baseline; justify-content: center; padding-top: 38%; font-size: 2.1rem; line-height: 1; letter-spacing: -0.03em; }
+  .compact .rdy-num { font-size: 1.45rem; padding-top: 36%; }
+  .rdy-of { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); margin-left: 0.1rem; }
+  .rdy-parts { display: grid; gap: 0.8rem; }
+  .compact .rdy-parts { grid-template-columns: 1fr 1fr; gap: 0.7rem 1.1rem; }
+  .compact { gap: 1.1rem; }
+  .compact .rdy-row { font-size: 0.75rem; white-space: nowrap; }
+  .compact .rdy-v { font-size: 0.75rem; }
+  .rdy-row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; font-size: 0.8125rem; }
+  .rdy-label { display: inline-flex; align-items: baseline; gap: 0.4rem; min-width: 0; }
+  .rdy-w { font-size: 0.6875rem; color: var(--muted); }
+  .rdy-v { font-size: 0.8125rem; color: var(--ink); }
+  .rdy-meter { display: block; height: 0.375rem; margin-top: 0.35rem; border-radius: 99px; background: var(--sunk); overflow: hidden; }
+  .rdy-meter span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; transform: scaleX(var(--w)); animation: rdy-grow calc(0.8s * var(--move)) var(--ease) both; animation-delay: calc(var(--i) * 70ms + 300ms); }
+  @keyframes rdy-grow { from { transform: scaleX(0); } }
+  .rdy-note { margin-top: 0.3rem; font-size: 0.75rem; color: var(--muted); }
+  @media (max-width: 25rem) { .compact .rdy-parts { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 30rem) { .rdy:not(.compact) { grid-template-columns: 1fr; justify-items: center; } .rdy:not(.compact) .rdy-parts { width: 100%; } }
+</style>

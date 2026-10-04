@@ -1,0 +1,54 @@
+---
+interface Sys { key: string; label: string; short: string; total: number; seen: number; strong: number }
+interface Props { data: Sys[]; sample?: boolean }
+const { data, sample = false } = Astro.props;
+const N = data.length, cx = 195, cy = 150, R = 104;
+const pt = (i: number, v: number) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / N; return [cx + Math.cos(a) * R * v, cy + Math.sin(a) * R * v]; };
+const poly = (vals: number[]) => vals.map((v, i) => pt(i, v).map((x) => x.toFixed(1)).join(',')).join(' ');
+const seen = data.map((d) => d.seen / d.total), strong = data.map((d) => d.strong / d.total);
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const tipOf = (d: Sys) => `${d.label}: ${d.strong} of ${d.total} cards strong (${pct(d.strong / d.total)}), ${d.seen} started`;
+const label = (i: number) => {
+  const [x, y] = pt(i, 1.16), a = -Math.PI / 2 + (i * 2 * Math.PI) / N, c = Math.cos(a);
+  return { x, y: y + Math.sin(a) * 4 + 4, anchor: c > 0.25 ? 'start' : c < -0.25 ? 'end' : 'middle' };
+};
+---
+<div class="rd" aria-hidden={sample ? 'true' : undefined}>
+  <svg viewBox="0 0 390 300" class="rd-svg" role={sample ? undefined : 'group'} aria-label={sample ? undefined : 'Mastery by system. Arrow keys move between systems.'} data-rove={sample ? undefined : ''}>
+    {[0.25, 0.5, 0.75, 1].map((r) => <polygon points={poly(data.map(() => r))} class="rd-ring" />)}
+    {data.map((_, i) => { const [x, y] = pt(i, 1); return <line x1={cx} y1={cy} x2={x} y2={y} class="rd-axis" />; })}
+    <polygon points={poly(seen)} class="rd-seen" />
+    <polygon points={poly(strong)} class="rd-strong-fill" />
+    <polygon points={poly(strong)} class="rd-strong" pathLength="1" />
+    {data.map((d, i) => { const l = label(i); return <text x={l.x.toFixed(1)} y={l.y.toFixed(1)} text-anchor={l.anchor} class="rd-label" aria-hidden="true">{d.short}</text>; })}
+    {data.map((d, i) => {
+      // The whole spoke is the hover target: with nothing strong yet every dot sits at the centre.
+      const [x, y] = pt(i, Math.max(strong[i], 0.02)), [x0, y0] = pt(i, 0.2), [x1, y1] = pt(i, 1.1);
+      return sample ? <circle cx={x} cy={y} r="3" class="rd-dot" style={`--i:${i}`} />
+        : <g class="rd-hit" role="img" aria-label={tipOf(d)} data-tip={tipOf(d)} tabindex={i === 0 ? 0 : -1}><line x1={x0} y1={y0} x2={x1} y2={y1} class="rd-target" /><circle cx={x} cy={y} r="3.5" class="rd-dot" style={`--i:${i}`} /></g>;
+    })}
+  </svg>
+  <p class="rd-key" aria-hidden="true"><span class="ch-key"><i style="--c:color-mix(in oklab, var(--accent) 28%, transparent)"></i>Started</span><span class="ch-key"><i style="--c:var(--accent)"></i>Strong (interval of 7+ days)</span></p>
+</div>
+
+<style>
+  .rd { display: grid; justify-items: center; }
+  .rd-svg { width: 100%; max-width: 25rem; height: auto; overflow: visible; }
+  .rd-ring { fill: none; stroke: var(--line); stroke-width: 1; }
+  .rd-ring:last-of-type { stroke: var(--line-strong); }
+  .rd-axis { stroke: var(--line); stroke-width: 1; }
+  .rd-seen, .rd-strong-fill { transform-box: view-box; transform-origin: 195px 150px; animation: rd-grow calc(0.9s * var(--move)) var(--ease) both 0.1s; }
+  .rd-seen { fill: color-mix(in oklab, var(--accent) 16%, transparent); stroke: color-mix(in oklab, var(--accent) 45%, transparent); stroke-width: 1; stroke-linejoin: round; }
+  .rd-strong-fill { fill: color-mix(in oklab, var(--accent) 26%, transparent); animation-delay: 0.3s; }
+  .rd-strong { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; animation: rd-draw calc(1.2s * var(--move)) var(--ease) both 0.25s; }
+  .rd-label { font-size: 12.5px; fill: var(--muted); font-family: var(--font-sans); }
+  .rd-dot { fill: var(--panel); stroke: var(--accent); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: rd-pop calc(0.4s * var(--move)) var(--ease) both; animation-delay: calc(var(--i) * 40ms + 0.7s); }
+  .rd-target { stroke: transparent; stroke-width: 22; stroke-linecap: round; }
+  .rd-hit { cursor: default; outline: none; }
+  .rd-hit:focus-visible .rd-target, .rd-hit:global(.is-tip) .rd-target { stroke: var(--glow); }
+  .rd-hit:focus-visible .rd-dot, .rd-hit:global(.is-tip) .rd-dot { fill: var(--accent); }
+  .rd-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem 1.1rem; margin-top: 0.75rem; font-size: 0.75rem; color: var(--muted); }
+  @keyframes rd-grow { from { transform: scale(0.5); opacity: 0; } }
+  @keyframes rd-draw { from { stroke-dashoffset: 1; } }
+  @keyframes rd-pop { from { transform: scale(0); } }
+</style>

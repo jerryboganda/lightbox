@@ -1,0 +1,35 @@
+---
+// Panel shell for one chart: title, a one-line takeaway from the data, the chart, and a screen-reader table.
+// `empty` turns the chart into a muted sample silhouette with a call to action.
+import Icon from '../Icon.astro';
+import '../../styles/charts.css';
+interface Empty { text: string; icon: string; cta: string; href?: string; timer?: string }
+interface Props { id: string; title: string; takeaway: string; class?: string; i?: number; empty?: Empty | null }
+const { id, title, takeaway, class: cls, i = 0, empty } = Astro.props;
+---
+<section id={id} class:list={['panel ch-card reveal', cls]} style={`--i:${i}`} aria-labelledby={`${id}-h`}>
+  <header class="ch-head">
+    <div class="min-w-0">
+      <h2 id={`${id}-h`} class="ch-title">{title}</h2>
+      <p class="ch-take">{takeaway}</p>
+    </div>
+    <slot name="actions" />
+  </header>
+  <div class:list={['ch-body', { 'ch-ghost': empty }]}>
+    <slot />
+    {empty && (
+      <div class="ch-empty">
+        <span class="ch-empty-ic" aria-hidden="true"><Icon name={empty.icon} size={19} /></span>
+        <p>{empty.text}</p>
+        {empty.href ? <a href={empty.href} class="btn btn-sm">{empty.cta}<Icon name="ArrowRight" size={15} /></a>
+          : <button type="button" class="btn btn-sm" data-timer={empty.timer}>{empty.cta}<Icon name="ArrowRight" size={15} /></button>}
+      </div>
+    )}
+  </div>
+  <slot name="foot" />
+  {!empty && <div class="sr-only"><slot name="table" /></div>}
+</section>
+
+<script>
+  import '../../scripts/charts';
+</script>

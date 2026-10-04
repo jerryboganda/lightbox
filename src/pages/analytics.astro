@@ -1,0 +1,244 @@
+---
+import { default_w, forgetting_curve } from 'ts-fsrs';
+import App from '../layouts/App.astro';
+import Icon from '../components/Icon.astro';
+import ChartCard from '../components/charts/ChartCard.astro';
+import Heatmap from '../components/charts/Heatmap.astro';
+import Radar from '../components/charts/Radar.astro';
+import AccuracyTrend from '../components/charts/AccuracyTrend.astro';
+import TimeBars from '../components/charts/TimeBars.astro';
+import ForgettingCurve from '../components/charts/ForgettingCurve.astro';
+import Readiness from '../components/charts/Readiness.astro';
+import { analytics, hm, today } from '../server/analytics';
+
+const uid = Astro.locals.user!.id;
+const a = analytics(uid), t = today(uid);
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+const short = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const long = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+// First-run: each empty chart shows a deterministic sample silhouette instead of a blank box.
+const hmEmpty = a.heatmap.activeDays === 0;
+const hmWeeks = hmEmpty ? a.heatmap.weeks.map((w, c) => w.map((d, r) => ({ ...d, level: ((c * 7 + r) * 37) % 11 < 5 ? 0 : (((c * 7 + r) * 13) % 4) + 1 }))) : a.heatmap.weeks;
+const seenAll = a.mastery.reduce((s, m) => s + m.seen, 0);
+const radar = seenAll ? a.mastery : a.mastery.map((m, i) => ({ ...m, seen: Math.round(m.total * (0.35 + ((i * 29) % 50) / 100)), strong: Math.round(m.total * (0.12 + ((i * 17) % 30) / 100)) }));
+const trendEmpty = a.trend.every((w) => w.n === 0);
+const SAMPLE_ACC = [0.5, 0.56, 0.52, 0.61, 0.58, 0.64, 0.62, 0.7, 0.66, 0.72, 0.75, 0.78];
+const trend = trendEmpty ? a.trend.map((w, i) => ({ ...w, n: 6 + ((i * 7) % 9), keyed: 5, right: 3, acc: SAMPLE_ACC[i] })) : a.trend;
+const timeEmpty = a.weekSeconds + a.prevWeekSeconds === 0;
+const time = timeEmpty ? a.time.map((d, i) => ({ ...d, focus: ((i * 7) % 5) * 900, mcq: ((i * 3) % 4) * 300, exam: i % 4 === 2 ? 1200 : 0 })) : a.time;
+const fcEmpty = a.reviewedCount === 0;
+const curve = fcEmpty ? a.curve.map((p) => ({ ...p, recall: forgetting_curve(default_w, p.day + 2, 9) })) : a.curve;
+
+// One-line takeaways, computed only from the numbers above.
+const H = a.heatmap;
+const actions = H.weeks.flat().reduce((s, d) => s + d.reviews + d.answers, 0);
+const hmTake = hmEmpty ? 'Each day you review, answer or focus lights up a square.'
+  : `Active on ${H.active28} of the last 28 days. ${H.current ? `Current streak ${days(H.current)}` : 'No streak running'}, longest ${days(H.longest)}.`;
+const started = a.mastery.filter((m) => m.seen);
+const best = [...a.mastery].sort((x, y) => y.strong / y.total - x.strong / x.total)[0];
+const room = [...a.mastery].sort((x, y) => x.seen / x.total - y.seen / y.total)[0];
+const radarTake = !seenAll ? 'How much of each system you have started, and how much is now strong.'
+  : `${best.strong ? `Strongest: ${best.label}, ${pct(best.strong / best.total)} strong.` : `${started.length} of ${a.mastery.length} systems started; nothing strong yet.`} Most room: ${room.label} (${room.seen} of ${room.total} started).`;
+const tw = a.trend[11], lw = a.trend[10], lastKeyed = [...a.trend].reverse().find((w) => w.keyed);
+const pts = tw.keyed && lw.keyed ? Math.round((tw.acc! - lw.acc!) * 100) : 0;
+const accTake = trendEmpty ? 'Weekly accuracy on questions with an answer key, with how many you answered.'
+  : !lastKeyed ? 'You have answered only questions without an answer key so far.'
+  : tw.keyed ? `${pct(tw.acc!)} on ${tw.keyed} keyed answer${tw.keyed === 1 ? '' : 's'} this week${!lw.keyed ? '' : pts ? `, ${pts > 0 ? 'up' : 'down'} ${Math.abs(pts)} points on last week` : ', level with last week'}.`
+  : `Latest: ${pct(lastKeyed.acc!)} in the week of ${short(lastKeyed.start)}.`;
+const src = ['focus', 'mcq', 'exam'] as const;
+const top = src.map((k) => [k, a.time.slice(7).reduce((s, d) => s + d[k], 0)] as const).sort((x, y) => y[1] - x[1])[0];
+const diff = a.weekSeconds - a.prevWeekSeconds;
+const timeTake = timeEmpty ? 'Focus sessions, MCQ and exam time per day for the last two weeks.'
+  : `${hm(a.weekSeconds)} in the last 7 days${a.prevWeekSeconds && Math.abs(diff) >= 60 ? `, ${hm(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than the week before` : ''}${top[1] ? `; mostly ${top[0] === 'focus' ? 'focus sessions' : top[0] === 'mcq' ? 'the MCQ bank' : 'quizzes and exams'}` : ''}.`;
+const fcTake = fcEmpty ? 'How your recall fades if you stop reviewing, predicted by FSRS from your own cards.'
+  : `Without review, average recall falls from ${pct(a.curve[0].recall)} today to ${pct(a.curve[30].recall)} in 30 days.`;
+const lever = [...a.readiness.parts].sort((x, y) => y.weight * (1 - (y.value ?? 0)) - x.weight * (1 - (x.value ?? 0)))[0];
+const readyTake = a.readiness.score >= 85 ? 'Strong on every part. Keep the rhythm going.' : `Biggest lever right now: ${lever.label.toLowerCase()}.`;
+const maxWeak = Math.max(1, ...a.weak.map((w) => w.score));
+const weakTake = a.weak.length ? `${a.weak.length} topic${a.weak.length === 1 ? '' : 's'} show the most evidence of weakness. Start with ${a.weak[0].title}.`
+  : 'Topics appear here when you forget cards, miss MCQs or mark something weak.';
+const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays} days` : t.examDays === 1 ? 'Exam tomorrow' : t.examDays === 0 ? 'Exam today' : 'Exam date passed';
+---
+<App title="Analytics" wide>
+  <header class="reveal flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" style="--i:0">
+    <div>
+      <h1 class="text-2xl font-medium">Analytics</h1>
+      <p class="mt-1 text-muted">Your rhythm, memory and weak spots, computed from your own reviews, answers and focus time.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" class="btn" data-timer="goals"><Icon name="Target" size={16} />Daily goals</button>
+      <button type="button" class="btn btn-primary" data-timer="start"><Icon name="Timer" size={16} />Start focus</button>
+    </div>
+  </header>
+
+  <div class="an-grid">
+    <ChartCard id="readiness" title="Exam readiness" takeaway={readyTake} class="c-ready" i={1}>
+      <Fragment slot="actions">
+        {exam ? <button type="button" class="badge s-agreed an-exam" data-timer="goals" aria-label={`${exam}. Change exam date`}><Icon name="CalendarDays" size={13} />{exam}</button>
+          : <button type="button" class="btn btn-sm btn-ghost" data-timer="goals"><Icon name="CalendarPlus" size={15} />Set exam date</button>}
+      </Fragment>
+      <Readiness score={a.readiness.score} parts={a.readiness.parts} />
+      <details class="an-how" slot="foot">
+        <summary><Icon name="Info" size={15} />How this is calculated</summary>
+        <div class="an-how-body">
+          <p>Readiness = 30% coverage + 30% retention + 25% MCQ accuracy + 15% consistency, scored out of 100.</p>
+          <ul>
+            <li><b>Coverage</b>: the share of the flashcard deck you have started.</li>
+            <li><b>Retention</b>: FSRS's predicted chance you would recall each reviewed card right now, averaged. Counts once 10 cards are reviewed.</li>
+            <li><b>MCQ accuracy</b>: correct answers among your last 50 answers to questions that have an answer key (bank, quizzes and exams). Counts after 10.</li>
+            <li><b>Consistency</b>: days with any study in the last 14.</li>
+          </ul>
+          <p>A part without enough evidence counts as zero. This measures study habits, not your exam result.</p>
+        </div>
+      </details>
+    </ChartCard>
+
+    <ChartCard id="activity" title="Activity" takeaway={hmTake} class="c-heat" i={2}
+      empty={hmEmpty ? { icon: 'CalendarDays', text: 'Review a few cards or answer an MCQ and today lights up.', cta: 'Start a review', href: '/practice/cards' } : null}>
+      <Heatmap weeks={hmWeeks} months={H.months} sample={hmEmpty} />
+      {!hmEmpty && (
+        <dl class="an-stats" slot="foot">
+          <div><dt>Current streak</dt><dd><span class="num" data-count={H.current}>{H.current}</span> {H.current === 1 ? 'day' : 'days'}</dd></div>
+          <div><dt>Longest streak</dt><dd><span class="num">{H.longest}</span> {H.longest === 1 ? 'day' : 'days'}</dd></div>
+          <div><dt>Active days</dt><dd><span class="num">{H.activeDays}</span> of 26 wk</dd></div>
+          <div><dt>Reviews, answers</dt><dd><span class="num">{actions}</span></dd></div>
+        </dl>
+      )}
+      <table slot="table">
+        <caption>Activity by week</caption>
+        <thead><tr><th>Week of</th><th>Active days</th><th>Card reviews</th><th>Answers</th><th>Focus minutes</th></tr></thead>
+        <tbody>{H.weeks.map((w) => <tr><td>{short(w[0].day)}</td><td>{w.filter((d) => d.score).length}</td><td>{w.reduce((s, d) => s + d.reviews, 0)}</td><td>{w.reduce((s, d) => s + d.answers, 0)}</td><td>{w.reduce((s, d) => s + d.minutes, 0)}</td></tr>)}</tbody>
+      </table>
+    </ChartCard>
+
+    <ChartCard id="weak" title="Weak topics" takeaway={weakTake} class="c-weak" i={3}
+      empty={a.weak.length ? null : { icon: 'Crosshair', text: 'No weak spots yet. Rate cards honestly and mark topics weak when they feel shaky.', cta: 'Practise MCQs', href: '/practice/mcq' }}>
+      {a.weak.length ? (
+        <ol class="wk-list">
+          {a.weak.map((w, i) => (
+            <li class="wk" style={`--i:${i}`}>
+              <span class="wk-rank num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+              <div class="min-w-0 flex-1">
+                <p class="wk-title">{w.title}</p>
+                <p class="wk-why"><span>{w.systemLabel}</span><span aria-hidden="true"> · </span><span class="text-ink">{w.reason}</span></p>
+                <span class="wk-meter" aria-hidden="true"><span style={`--w:${w.score / maxWeak}`}></span></span>
+              </div>
+              <div class="wk-cta">
+                <a href={w.href} class="btn btn-sm btn-ghost" aria-label={`Open topic: ${w.title}`}><Icon name="BookOpenText" size={15} /><span class="wk-cta-t">Open</span></a>
+                {w.drill && <a href={`/practice/cards?focus=${encodeURIComponent(w.drill)}`} class="btn btn-sm" aria-label={`Drill cards: ${w.title}`}><Icon name="Layers" size={15} /><span class="wk-cta-t">Drill</span></a>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <ol class="wk-list" aria-hidden="true">
+          {[0.9, 0.7, 0.55, 0.4].map((v, i) => <li class="wk"><span class="wk-rank num">0{i + 1}</span><div class="min-w-0 flex-1"><span class="wk-ph" style={`width:${40 + v * 30}%`}></span><span class="wk-ph sm"></span><span class="wk-meter"><span style={`--w:${v}`}></span></span></div></li>)}
+        </ol>
+      )}
+    </ChartCard>
+
+    <ChartCard id="forgetting" title="Forgetting curve" takeaway={fcTake} class="c-forget" i={4}
+      empty={fcEmpty ? { icon: 'Brain', text: 'Learn your first flashcards and FSRS will chart how your memory of them fades.', cta: 'Learn new cards', href: '/practice/cards' } : null}>
+      <ForgettingCurve curve={curve} sample={fcEmpty} />
+      {!fcEmpty && (
+        <div class="ch-foot fc-foot" slot="foot">
+          <p class="flex flex-wrap gap-x-5 gap-y-1">
+            <span class="ch-stat"><b class:list={{ 'text-signal': a.dropping }}>{a.dropping}</b>card{a.dropping === 1 ? '' : 's'} will drop below 90% recall this week</span>
+            <span class="ch-stat"><b>{a.below}</b>already below 90%</span>
+          </p>
+          <a href="/practice/cards" class="btn btn-sm btn-primary"><Icon name="Layers" size={15} />Review now</a>
+        </div>
+      )}
+      <table slot="table">
+        <caption>Average predicted recall without review</caption>
+        <thead><tr><th>When</th><th>Recall</th></tr></thead>
+        <tbody>{[0, 1, 3, 7, 14, 21, 30].map((d) => <tr><td>{d ? `In ${d} days` : 'Today'}</td><td>{pct(a.curve[d].recall)}</td></tr>)}</tbody>
+      </table>
+    </ChartCard>
+
+    <ChartCard id="mastery" title="Mastery by system" takeaway={radarTake} class="c-radar" i={5}
+      empty={seenAll ? null : { icon: 'Radar', text: 'Start flashcards and each system grows outward as cards become strong.', cta: 'Learn new cards', href: '/practice/cards' }}>
+      <Radar data={radar} sample={!seenAll} />
+      <table slot="table">
+        <caption>Flashcard mastery by system</caption>
+        <thead><tr><th>System</th><th>Cards</th><th>Started</th><th>Strong</th></tr></thead>
+        <tbody>{a.mastery.map((m) => <tr><td>{m.label}</td><td>{m.total}</td><td>{m.seen}</td><td>{m.strong}</td></tr>)}</tbody>
+      </table>
+    </ChartCard>
+
+    <ChartCard id="accuracy" title="MCQ accuracy" takeaway={accTake} class="c-acc" i={6}
+      empty={trendEmpty ? { icon: 'Target', text: 'Answer a few past-paper MCQs to start your accuracy trend.', cta: 'Practise MCQs', href: '/practice/mcq' } : null}>
+      <AccuracyTrend weeks={trend} sample={trendEmpty} />
+      {!trendEmpty && <p class="ch-foot" slot="foot"><span class="ch-key"><i style="--c:var(--accent)"></i>% correct, every keyed answer incl. repeats</span><span class="ch-key"><i style="--c:color-mix(in oklab, var(--ink) 14%, transparent)"></i>Answered</span></p>}
+      <table slot="table">
+        <caption>MCQ accuracy by week, every keyed answer including repeats</caption>
+        <thead><tr><th>Week of</th><th>Answered</th><th>Keyed</th><th>Correct</th><th>Accuracy</th></tr></thead>
+        <tbody>{a.trend.map((w) => <tr><td>{short(w.start)}</td><td>{w.n}</td><td>{w.keyed}</td><td>{w.right}</td><td>{w.acc === null ? 'none' : pct(w.acc)}</td></tr>)}</tbody>
+      </table>
+    </ChartCard>
+
+    <ChartCard id="time" title="Time spent" takeaway={timeTake} class="c-time" i={7}
+      empty={timeEmpty ? { icon: 'Timer', text: 'Run a focus timer or answer MCQs and your study time adds up here.', cta: 'Start a focus timer', timer: 'start' } : null}>
+      <TimeBars days={time} sample={timeEmpty} />
+      <table slot="table">
+        <caption>Study time per day, minutes</caption>
+        <thead><tr><th>Day</th><th>Focus</th><th>MCQ bank</th><th>Quizzes and exams</th><th>Total</th></tr></thead>
+        <tbody>{a.time.map((d) => <tr><td>{long(d.day)}</td><td>{Math.round(d.focus / 60)}</td><td>{Math.round(d.mcq / 60)}</td><td>{Math.round(d.exam / 60)}</td><td>{Math.round((d.focus + d.mcq + d.exam) / 60)}</td></tr>)}</tbody>
+      </table>
+    </ChartCard>
+  </div>
+</App>
+
+<script>
+  import { countUp } from '../scripts/motion';
+  import '../scripts/timer';
+  countUp();
+  document.addEventListener('astro:after-swap', () => location.pathname === '/analytics' && countUp());
+</script>
+
+<style>
+  .an-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+  /* ChartCard roots carry these classes but not this page's scope attribute. */
+  .an-grid > :global(.c-ready) { grid-column: span 5; } .an-grid > :global(.c-heat) { grid-column: span 7; }
+  .an-grid > :global(.c-weak) { grid-column: span 12; }
+  .an-grid > :global(.c-forget) { grid-column: span 7; } .an-grid > :global(.c-radar) { grid-column: span 5; }
+  .an-grid > :global(.c-acc), .an-grid > :global(.c-time) { grid-column: span 6; }
+  @media (max-width: 1100px) { .an-grid > :global(:is(.c-ready, .c-heat)) { grid-column: span 12; } }
+  @media (max-width: 860px) { .an-grid { display: flex; flex-direction: column; } }
+
+  .an-exam { cursor: pointer; font-size: 0.75rem; padding: 0.4rem 0.6rem; }
+  .an-exam::before { display: none; }
+  .an-how { margin-top: 1.1rem; border-top: 1px solid var(--line); padding-top: 0.85rem; font-size: 0.8125rem; }
+  .an-how summary { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; color: var(--muted); list-style: none; border-radius: 6px; transition: color var(--d1); }
+  .an-how summary::-webkit-details-marker { display: none; }
+  .an-how summary:hover, .an-how[open] summary { color: var(--ink); }
+  .an-how-body { margin-top: 0.7rem; display: grid; gap: 0.6rem; color: var(--muted); animation: rise var(--d3) var(--ease) both; }
+  .an-how-body ul { display: grid; gap: 0.35rem; padding-left: 1rem; list-style: disc; }
+  .an-how-body b { color: var(--ink); font-weight: 500; }
+  .fc-foot { align-items: center; }
+  .an-grid :global(.c-heat .ch-body) { display: flex; flex-direction: column; justify-content: center; }
+  .an-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 1.1rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+  .an-stats > div { padding: 0 0.9rem; border-left: 1px solid var(--line); min-width: 0; }
+  .an-stats > div:first-child { padding-left: 0; border-left: 0; }
+  .an-stats dt { font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .an-stats dd { margin-top: 0.15rem; font-size: 0.8125rem; color: var(--muted); }
+  .an-stats dd .num { font-size: 1.5rem; color: var(--ink); letter-spacing: -0.02em; }
+  @media (max-width: 540px) { .an-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 0.9rem; } .an-stats > div:nth-child(3) { padding-left: 0; border-left: 0; } }
+
+  .wk-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; counter-reset: wk; }
+  .wk { display: flex; align-items: center; gap: 0.9rem; padding: 0.8rem 0.3rem; border-top: 1px solid var(--line); animation: rise var(--d4) var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms + 150ms); }
+  .wk:nth-child(-n + 2) { border-top: 0; }
+  .wk-rank { font-size: 0.75rem; color: var(--muted); width: 1.4rem; flex: none; }
+  .wk-title { font-size: 0.9rem; font-weight: 500; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .wk-why { margin-top: 0.1rem; font-size: 0.75rem; color: var(--muted); }
+  .wk-meter { display: block; height: 0.25rem; margin-top: 0.5rem; border-radius: 99px; background: var(--sunk); overflow: hidden; max-width: 16rem; }
+  .wk-meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--signal), var(--bad)); transform-origin: left; transform: scaleX(var(--w)); animation: wk-grow calc(0.8s * var(--move)) var(--ease) both 0.35s; }
+  @keyframes wk-grow { from { transform: scaleX(0); } }
+  .wk-cta { display: flex; gap: 0.35rem; flex: none; }
+  .wk-ph { display: block; height: 0.7rem; border-radius: 99px; background: var(--line); }
+  .wk-ph.sm { width: 30%; height: 0.5rem; margin-top: 0.45rem; }
+  @media (max-width: 860px) { .wk-list { grid-template-columns: minmax(0, 1fr); } .wk:nth-child(2) { border-top: 1px solid var(--line); } }
+  @media (max-width: 480px) { .wk-cta-t { display: none; } .wk-cta .btn { padding: 0 0.55rem; } }
+</style>
