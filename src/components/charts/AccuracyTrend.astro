@@ -1,0 +1,36 @@
+---
+interface Week { start: string; n: number; keyed: number; right: number; acc: number | null }
+interface Props { weeks: Week[]; sample?: boolean }
+const { weeks, sample = false } = Astro.props;
+const N = weeks.length, maxN = Math.max(1, ...weeks.map((w) => w.n));
+const x = (i: number) => (i + 0.5) * 100;
+const short = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+// Line segments break across weeks without keyed answers.
+const runs: [number, number][][] = [];
+weeks.forEach((w, i) => { if (w.acc === null) return; const p: [number, number] = [x(i), 100 - w.acc * 100]; if (i && weeks[i - 1].acc !== null) runs.at(-1)!.push(p); else runs.push([p]); });
+const line = runs.map((r) => 'M' + r.map((p) => p.join(' ')).join(' L')).join(' ');
+const area = runs.filter((r) => r.length > 1).map((r) => `M${r[0][0]} 100 L${r.map((p) => p.join(' ')).join(' L')} L${r.at(-1)![0]} 100 Z`).join(' ');
+const tipOf = (w: Week) => `Week of ${short(w.start)}: ${w.n ? `${w.n} answered` : 'no answers'}${w.keyed ? `, ${w.right} of ${w.keyed} keyed correct (${Math.round(w.acc! * 100)}%)` : ''}`;
+---
+<div class="pl-wrap" aria-hidden={sample ? 'true' : undefined}>
+  <div class="pl" style={`--n:${N}`}>
+    <div class="pl-grid" aria-hidden="true">{[1, 0.5, 0].map((v) => <span style={`top:${(1 - v) * 100}%`}><em>{v * 100}%</em></span>)}</div>
+    <div class="pl-cols" aria-hidden="true">{weeks.map((w, i) => <span><i class="pl-bar ac-vol" style={`height:${(w.n / maxN) * 42}%;--i:${i}`}></i></span>)}</div>
+    <svg class="pl-svg" viewBox={`0 0 ${N * 100} 100`} preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="ac-fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity="0.22" /><stop offset="1" stop-color="var(--accent)" stop-opacity="0" /></linearGradient></defs>
+      {area && <path d={area} fill="url(#ac-fade)" />}
+      <path d={line} fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+    </svg>
+    {weeks.map((w, i) => w.acc !== null && <span class="pl-dot" style={`left:${((i + 0.5) / N) * 100}%;top:${(1 - w.acc) * 100}%;--i:${i}`} aria-hidden="true"></span>)}
+    {!sample && (
+      <div class="pl-hits" role="group" aria-label="Weekly MCQ accuracy. Arrow keys move between weeks." data-rove>
+        {weeks.map((w, i) => <span role="img" aria-label={tipOf(w)} data-tip={tipOf(w)} tabindex={i === N - 1 ? 0 : -1}></span>)}
+      </div>
+    )}
+  </div>
+  <div class="pl-x" style={`--n:${N}`} data-thin aria-hidden="true">{weeks.map((w, i) => <span data-now={i === N - 1 ? '' : undefined}>{i === N - 1 ? 'This wk' : short(w.start)}</span>)}</div>
+</div>
+
+<style>
+  .ac-vol { background: color-mix(in oklab, var(--ink) 10%, transparent); }
+</style>

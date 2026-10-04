@@ -1,0 +1,41 @@
+---
+interface Cell { day: string; future: boolean; score: number; level: number; reviews: number; answers: number; minutes: number }
+interface Props { weeks: Cell[][]; months: { col: number; label: string }[]; sample?: boolean }
+const { weeks, months, sample = false } = Astro.props;
+const fmt = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const n = (v: number, one: string) => `${v} ${one}${v === 1 ? '' : 's'}`;
+const tipOf = (c: Cell) => `${fmt(c.day)}: ${c.score ? [c.reviews && n(c.reviews, 'card review'), c.answers && n(c.answers, 'answer'), c.minutes && `${c.minutes} focus min`].filter(Boolean).join(', ') : 'no activity'}`;
+const last = weeks.flat().filter((c) => !c.future).at(-1)?.day;
+---
+<div class="hm-wrap" data-scroll-end aria-hidden={sample ? 'true' : undefined}>
+  <div class="hm">
+    <div class="hm-months" aria-hidden="true">{months.map((m) => <span style={`grid-column:${m.col + 1}`}>{m.label}</span>)}</div>
+    <div class="hm-days" aria-hidden="true"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span></span></div>
+    <div class="hm-grid" role={sample ? undefined : 'group'} aria-label={sample ? undefined : 'Daily activity, 26 weeks. Arrow keys move by day and week.'} data-rove={sample ? undefined : ''} data-step="7">
+      {weeks.map((w, col) => w.map((c) => c.future || sample
+        ? <span class="hm-c" data-l={c.future ? 'f' : c.level} style={`--w:${col}`} aria-hidden="true"></span>
+        : <span class="hm-c" data-l={c.level} style={`--w:${col}`} role="img" aria-label={tipOf(c)} data-tip={tipOf(c)} tabindex={c.day === last ? 0 : -1}></span>))}
+    </div>
+  </div>
+</div>
+<p class="hm-key" aria-hidden="true">Less{[0, 1, 2, 3, 4].map((l) => <span class="hm-c" data-l={l} style="--w:0"></span>)}More</p>
+
+<style>
+  .hm-wrap { container-type: inline-size; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding: 2px 2px 4px; }
+  .hm { --g: 3px; --c: clamp(11px, calc((100cqw - 2.4rem) / 26 - var(--g)), 19px); display: grid; grid-template-columns: 2.1rem auto; width: max-content; column-gap: 0.3rem; }
+  .hm-months { grid-column: 2; display: grid; grid-template-columns: repeat(26, var(--c)); column-gap: var(--g); height: 1.2rem; font-size: 0.6875rem; color: var(--muted); }
+  .hm-months span { white-space: nowrap; grid-row: 1; }
+  .hm-days { position: sticky; left: -2px; z-index: 1; background: var(--panel); grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(7, var(--c)); row-gap: var(--g); font-size: 0.6875rem; color: var(--muted); align-items: center; }
+  .hm-grid { grid-column: 2; grid-row: 2; display: grid; grid-template-rows: repeat(7, var(--c)); grid-auto-flow: column; grid-auto-columns: var(--c); gap: var(--g); }
+  .hm-c { border-radius: 3px; background: var(--sunk); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--line-strong) 45%, transparent); outline-offset: 1px; animation: hm-in calc(0.5s * var(--move)) var(--ease) both; animation-delay: calc(var(--w) * 12ms + 80ms); }
+  .hm-c[data-l="1"] { background: color-mix(in oklab, var(--accent) 30%, var(--sunk)); }
+  .hm-c[data-l="2"] { background: color-mix(in oklab, var(--accent) 52%, var(--sunk)); }
+  .hm-c[data-l="3"] { background: color-mix(in oklab, var(--accent) 76%, var(--sunk)); }
+  .hm-c[data-l="4"] { background: var(--accent); }
+  .hm-c[data-l="f"] { background: none; box-shadow: none; }
+  .hm-c:hover, .hm-c:global(.is-tip) { outline: 2px solid var(--ink); }
+  .hm-key { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-top: 0.6rem; font-size: 0.6875rem; color: var(--muted); }
+  .hm-key .hm-c { width: 11px; height: 11px; }
+  .hm-key .hm-c:first-child { margin-left: 0.35rem; } .hm-key .hm-c:last-child { margin-right: 0.35rem; }
+  @keyframes hm-in { from { opacity: 0; transform: scale(0.4); } }
+</style>

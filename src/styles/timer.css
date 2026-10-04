@@ -1,0 +1,71 @@
+/* StudyTimer island. Phase colour: focus = accent, break = ok. Motion scales with --move. */
+.tm-dock { position: fixed; z-index: 40; right: 1.25rem; bottom: 1.25rem; --tm: var(--accent); }
+.tm-dock[data-phase="break"] { --tm: var(--ok); }
+.tm-ring { transform: rotate(-90deg); flex: none; }
+.tm-track { fill: none; stroke: color-mix(in oklab, var(--tm) 22%, var(--sunk)); }
+.tm-arc { fill: none; stroke: var(--tm); stroke-linecap: round; transition: stroke-dashoffset calc(0.3s * var(--move)) linear, stroke var(--d3); }
+
+.tm-pill { display: flex; align-items: center; gap: 0.15rem; height: 2.85rem; padding: 0 0.3rem 0 0.3rem; border-radius: 99px; background: color-mix(in oklab, var(--raised) 90%, transparent); border: 1px solid var(--line-strong); box-shadow: var(--shadow); backdrop-filter: blur(14px) saturate(1.2); animation: tm-in var(--d3) var(--ease) both; }
+.tm-pill-main { display: flex; align-items: center; gap: 0.55rem; height: 2.25rem; padding: 0 0.65rem 0 0.3rem; border-radius: 99px; color: var(--ink); transition: background-color var(--d1); }
+.tm-pill-main:hover { background: color-mix(in oklab, var(--ink) 6%, transparent); }
+.tm-pill-time { font-size: 0.9375rem; min-width: 2.6rem; }
+.tm-pill-phase { font-size: 0.75rem; color: var(--muted); }
+.tm-pill-btn { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 99px; color: var(--tm); background: color-mix(in oklab, var(--tm) 14%, transparent); transition: background-color var(--d1), transform var(--d1) var(--ease); }
+.tm-pill-btn:hover { background: color-mix(in oklab, var(--tm) 24%, transparent); }
+[data-running] .tm-pill { border-color: color-mix(in oklab, var(--tm) 45%, var(--line-strong)); }
+.tm-dot { position: relative; display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: 99px; color: var(--tm); background: color-mix(in oklab, var(--raised) 90%, transparent); border: 1px solid var(--line-strong); box-shadow: var(--shadow); backdrop-filter: blur(14px); animation: tm-in var(--d3) var(--ease) both; }
+.tm-dot-ring { position: absolute; inset: -1px; }
+@keyframes tm-in { from { opacity: 0; transform: translateY(calc(8px * var(--move))) scale(calc(1 - 0.08 * var(--move))); } }
+
+.tm-panel { position: fixed; inset: auto 1.25rem 4.9rem auto; margin: 0; width: 22rem; max-width: calc(100vw - 1.5rem); max-height: calc(100dvh - 6.5rem); overflow: auto; overscroll-behavior: contain; padding: 1rem 1.1rem 1.15rem; color: var(--ink); background: var(--raised); border: 1px solid var(--line-strong); border-radius: 18px; box-shadow: var(--shadow), 0 24px 60px -24px rgb(0 0 0 / 0.45); transform-origin: bottom right; }
+.tm-panel:popover-open { animation: tm-pop var(--d3) var(--ease) both; }
+@keyframes tm-pop { from { opacity: 0; transform: translateY(calc(10px * var(--move))) scale(calc(1 - 0.05 * var(--move))); } }
+.tm-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.tm-head h2 { font-size: 0.95rem; font-weight: 500; }
+.tm-seg { display: flex; margin-top: 0.85rem; }
+.tm-seg button { flex: 1; }
+.tm-slash { margin: 0 0.15rem; color: var(--faint); }
+.tm-custom { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.7rem; }
+.tm-custom label { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8125rem; }
+.tm-custom .field { height: 2.1rem; padding: 0 0.5rem; width: 4.2rem; }
+
+.tm-face { position: relative; display: grid; place-items: center; margin: 1.1rem auto 0.4rem; width: 176px; height: 176px; }
+.tm-big .tm-track { stroke: color-mix(in oklab, var(--tm) 18%, var(--sunk)); }
+.tm-time { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 0.15rem; }
+.tm-phase { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tm); }
+.tm-clock { font-size: 2.5rem; line-height: 1.05; letter-spacing: -0.03em; }
+.tm-sub { font-size: 0.75rem; color: var(--muted); }
+.tm-ctrl { display: flex; align-items: center; justify-content: center; gap: 0.6rem; margin-top: 0.4rem; }
+.tm-go { min-width: 9.5rem; justify-content: center; height: 2.6rem; border-radius: 99px; }
+.tm-dock[data-phase="break"] .tm-go { background: var(--ok); color: var(--accent-ink); }
+.tm-icon { width: 2.6rem; height: 2.6rem; padding: 0; justify-content: center; border-radius: 99px; }
+.tm-opts { display: grid; gap: 0.35rem; margin-top: 1rem; padding-top: 0.85rem; border-top: 1px solid var(--line); }
+.tm-check { display: flex; align-items: center; gap: 0.55rem; font-size: 0.8125rem; color: var(--muted); cursor: pointer; }
+.tm-check input { width: 1rem; height: 1rem; }
+.tm-check:hover { color: var(--ink); }
+
+.tm-today { margin-top: 0.9rem; padding-top: 0.85rem; border-top: 1px solid var(--line); }
+.tm-today-head { display: flex; align-items: center; gap: 0.6rem; }
+.tm-today-head h3 { font-size: 0.8125rem; font-weight: 500; }
+.tm-today-head .btn { margin-left: auto; }
+.tm-exam { font-size: 0.6875rem; padding: 0.2rem 0.5rem; border-radius: 99px; color: color-mix(in oklab, var(--signal) 80%, var(--ink)); background: color-mix(in oklab, var(--signal) 12%, transparent); }
+.tm-rings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin-top: 0.7rem; }
+.tm-rings li { display: grid; justify-items: center; gap: 0.3rem; padding: 0.6rem 0.25rem 0.55rem; border-radius: 12px; background: var(--sunk); font-size: 0.8125rem; }
+.tm-ring-l { font-size: 0.6875rem; color: var(--muted); }
+.tm-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; margin-top: 0.7rem; }
+.tm-form label { display: grid; gap: 0.3rem; font-size: 0.75rem; color: var(--muted); }
+.tm-form .field { height: 2.2rem; padding: 0 0.55rem; }
+.tm-wide { grid-column: 1 / -1; }
+.tm-err { min-height: 0; font-size: 0.75rem; color: var(--bad); }
+.tm-err:empty { display: none; }
+
+@media (max-width: 767px) {
+  .tm-dock { right: 0.75rem; bottom: calc(4.85rem + env(safe-area-inset-bottom)); }
+  [data-focus="on"] .tm-dock { bottom: calc(1rem + env(safe-area-inset-bottom)); }
+  .tm-pill-phase { display: none; }
+  .tm-panel { inset: auto 0.75rem calc(8.3rem + env(safe-area-inset-bottom)) 0.75rem; width: auto; max-width: none; max-height: calc(100dvh - 12rem); }
+  [data-focus="on"] .tm-panel { bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+  /* Leave room under the last content for the floating pill. */
+  html:has(.tm-pill):not([data-focus="on"]) .content { padding-bottom: calc(8.75rem + env(safe-area-inset-bottom)); }
+}
+@media print { .tm-dock { display: none; } }

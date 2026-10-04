@@ -4,6 +4,9 @@ import Icon from '../components/Icon.astro';
 import { facts, mcqs, SYSTEMS, systemOrder, stats, isEditionClash } from '../lib/data';
 import { dashboard } from '../server/progress';
 import { db } from '../server/db';
+import { analytics, today } from '../server/analytics';
+import GoalRings from '../components/charts/GoalRings.astro';
+import Readiness from '../components/charts/Readiness.astro';
 
 const user = Astro.locals.user!;
 const d = dashboard(user.id);
@@ -32,6 +35,10 @@ const accuracy = d.mcqKeyed ? Math.round((d.mcqRight / d.mcqKeyed) * 100) : null
 const corpusPct = stats.pilotFiles / stats.files;
 const R = 30, C = 2 * Math.PI * R;
 const hasDue = d.dueNow + d.newToday > 0;
+// ponytail: the readiness tile reuses the full analytics pass (a few ms); split out readiness() if home gets slow.
+const t = today(user.id), ready = analytics(user.id).readiness;
+const met = (['cards', 'mcqs', 'minutes'] as const).filter((k) => t.goals[k] > 0 && t.done[k] >= t.goals[k]).length;
+const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays} days` : t.examDays === 1 ? 'Exam tomorrow' : t.examDays === 0 ? 'Exam today' : null;
 ---
 <App title="Home">
   {welcome && <div class="reveal mb-5 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 px-4 py-3 text-sm text-ok" role="status"><Icon name="CircleCheck" size={18} />Password saved. You're all set.</div>}
@@ -64,7 +71,28 @@ const hasDue = d.dueNow + d.newToday > 0;
   )}
 
   <div class="bento mt-6">
-    <section class="panel tile col-a reveal" style="--i:2">
+    <section class="panel tile col-t reveal" style="--i:2" aria-labelledby="today-h">
+      <header class="tile-h">
+        <h2 id="today-h">Today</h2>
+        <span class="flex items-center gap-1">
+          <button type="button" class="tile-link" data-timer="goals">Edit goals</button>
+          <span class="text-faint" aria-hidden="true">·</span>
+          <button type="button" class="tile-link" data-timer="start"><Icon name="Timer" size={15} />Start focus</button>
+        </span>
+      </header>
+      <p class="mt-1 text-sm text-muted">{met === 3 ? 'All three daily goals met. Well done.' : met ? `${met} of 3 daily goals met so far.` : 'Your daily goals for cards, MCQs and focus time.'}</p>
+      <div class="mt-4"><GoalRings done={t.done} goals={t.goals} /></div>
+    </section>
+
+    <a href="/analytics" class="panel tile col-r reveal lift press group" style="--i:3" aria-label={`Exam readiness ${ready.score} out of 100. Open analytics`}>
+      <header class="tile-h">
+        <h2>Exam readiness</h2>
+        <span class="tile-link group-hover:text-accent">{exam ?? 'Analytics'}<Icon name="ArrowUpRight" size={15} /></span>
+      </header>
+      <div class="mt-4"><Readiness score={ready.score} parts={ready.parts} compact /></div>
+    </a>
+
+    <section class="panel tile col-a reveal" style="--i:4">
       <header class="tile-h"><h2>Library</h2><a href="/facts" class="tile-link">Explore facts<Icon name="ArrowUpRight" size={15} /></a></header>
       <p class="mt-1 text-sm text-muted"><span class="num text-ink" data-count={stats.verified}>{stats.verified}</span> of <span class="num">{stats.facts}</span> facts verified, each traced to its file and page.</p>
       <div class="stack mt-5">
@@ -87,7 +115,7 @@ const hasDue = d.dueNow + d.newToday > 0;
       </div>
     </section>
 
-    <section class="panel tile col-b reveal" style="--i:3">
+    <section class="panel tile col-b reveal" style="--i:5">
       <header class="tile-h"><h2>Your mastery by system</h2><span class="text-xs text-faint num">{d.cardsSeen}/{stats.anki} cards started</span></header>
       <ul class="mt-3 grid gap-x-8 sm:grid-cols-2">
         {systemOrder.filter((s) => d.mastery[s]).map((s, i) => {
@@ -108,14 +136,14 @@ const hasDue = d.dueNow + d.newToday > 0;
       <p class="mt-3 flex items-center gap-4 text-[11px] text-faint"><span class="flex items-center gap-1.5"><span class="h-1.5 w-3 rounded-full bg-accent/40"></span>Started</span><span class="flex items-center gap-1.5"><span class="h-1.5 w-3 rounded-full bg-accent"></span>Strong (interval of 7 days or more)</span></p>
     </section>
 
-    <section class="panel tile col-c reveal" style="--i:4">
+    <section class="panel tile col-c reveal" style="--i:6">
       <header class="tile-h"><h2>Needs your judgement</h2><a href="/review" class="tile-link">Review centre<Icon name="ArrowUpRight" size={15} /></a></header>
       <ul class="mt-3 divide-y divide-line">
         {review.map((r) => <li><a href={r.href} class="flex items-center justify-between gap-3 py-2.5 text-sm hover:text-ink text-muted transition-colors"><span class="flex items-center gap-2.5"><span class={`badge ${r.c}`}>{r.n}</span>{r.label}</span><Icon name="ChevronRight" size={16} class="text-faint" /></a></li>)}
       </ul>
     </section>
 
-    <section class="panel tile col-d reveal" style="--i:5">
+    <section class="panel tile col-d reveal" style="--i:7">
       <header class="tile-h"><h2>MCQ bank</h2><a href="/practice/mcq" class="tile-link">Practise<Icon name="ArrowUpRight" size={15} /></a></header>
       <div class="mt-3 grid grid-cols-3 gap-3">
         <div><div class="num text-2xl" data-count={d.mcqAnswered}>{d.mcqAnswered}</div><div class="text-xs text-muted">answered of {mcqs.length}</div></div>
@@ -124,7 +152,7 @@ const hasDue = d.dueNow + d.newToday > 0;
       </div>
     </section>
 
-    <section class="panel tile col-e reveal" style="--i:6">
+    <section class="panel tile col-e reveal" style="--i:8">
       <header class="tile-h"><h2>{d.recent.length ? 'Continue where you left off' : 'Start here'}</h2></header>
       <ul class="mt-2 divide-y divide-line">
         {(d.recent.length ? d.recent.map((r) => ({ href: r.ref, title: r.title, sub: 'Topic note' })) : [
@@ -139,6 +167,7 @@ const hasDue = d.dueNow + d.newToday > 0;
 
 <script>
   import { countUp, magnetic } from '../scripts/motion';
+  import '../scripts/timer';
   const run = () => { countUp(); magnetic(); };
   run();
   document.addEventListener('astro:after-swap', run);
@@ -156,6 +185,7 @@ const hasDue = d.dueNow + d.newToday > 0;
   .tile-h h2 { font-size: 0.95rem; font-weight: 500; }
   .tile-link { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1); }
   .tile-link:hover { color: var(--accent); }
+  .col-t { grid-column: span 7; } .col-r { grid-column: span 5; display: block; }
   .col-a { grid-column: span 5; grid-row: span 2; } .col-b { grid-column: span 7; grid-row: span 2; }
   .col-c { grid-column: span 4; } .col-d { grid-column: span 4; } .col-e { grid-column: span 4; }
   .stack { display: flex; gap: 3px; height: 0.75rem; }
@@ -170,7 +200,7 @@ const hasDue = d.dueNow + d.newToday > 0;
   .meter { position: relative; display: block; height: 0.375rem; border-radius: 99px; background: var(--sunk); overflow: hidden; }
   .meter span { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--w)); border-radius: 99px; animation: growx var(--d4) var(--ease) both; animation-delay: calc(var(--i) * 30ms + 250ms); }
   .m-seen { background: color-mix(in oklab, var(--accent) 40%, transparent); } .m-strong { background: var(--accent); }
-  @media (max-width: 1100px) { .col-a, .col-b { grid-column: span 12; grid-row: auto; } .col-c, .col-d, .col-e { grid-column: span 6; } .col-e { grid-column: span 12; } }
+  @media (max-width: 1100px) { .col-t, .col-r { grid-column: span 12; } .col-a, .col-b { grid-column: span 12; grid-row: auto; } .col-c, .col-d, .col-e { grid-column: span 6; } .col-e { grid-column: span 12; } }
   @media (max-width: 767px) { .hero { grid-template-columns: 1fr; gap: 1.25rem; } .activity { width: 100%; } .col-c, .col-d, .col-e { grid-column: span 12; } .tile { padding: 1.1rem; } }
   @media (prefers-reduced-motion: reduce) { .bar, .stack a, .ring, .meter span { animation: none; } }
   :global([data-motion="reduced"]) :is(.bar, .stack a, .ring, .meter span) { animation: none; }

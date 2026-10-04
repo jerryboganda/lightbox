@@ -1,0 +1,37 @@
+---
+import { hm } from '../../server/analytics';
+interface Day { day: string; focus: number; exam: number; mcq: number }
+interface Props { days: Day[]; sample?: boolean }
+const { days, sample = false } = Astro.props;
+const N = days.length;
+const max = Math.max(...days.map((d) => d.focus + d.exam + d.mcq));
+// A round top for the axis: 30 min steps up to 2 h, then hours.
+const top = max <= 0 ? 3600 : max <= 7200 ? Math.ceil(max / 1800) * 1800 : Math.ceil(max / 3600) * 3600;
+const wd = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'narrow', timeZone: 'UTC' });
+const long = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const tipOf = (d: Day) => { const t = d.focus + d.exam + d.mcq; return `${long(d.day)}: ${t ? `${hm(t)} (focus ${hm(d.focus)}, MCQs ${hm(d.mcq)}, exams ${hm(d.exam)})` : 'nothing logged'}`; };
+const SEGS = [['focus', 'var(--accent)'], ['mcq', 'var(--signal)'], ['exam', 'var(--edition)']] as const;
+---
+<div class="pl-wrap" aria-hidden={sample ? 'true' : undefined}>
+  <div class="pl" style={`--n:${N}`}>
+    <div class="pl-grid" aria-hidden="true">{[1, 0.5, 0].map((v) => <span style={`top:${(1 - v) * 100}%`}><em>{v ? hm(top * v).replace(' min', 'm').replace(' h', 'h') : '0'}</em></span>)}</div>
+    <div class="pl-cols" aria-hidden="true">
+      {days.map((d, i) => { const t = d.focus + d.exam + d.mcq; return (
+        <span><i class="pl-bar tb-bar" style={`height:${(t / top) * 100}%;--i:${i}`}>{SEGS.map(([k, c]) => d[k] > 0 && <b style={`flex:${d[k]};background:${c}`}></b>)}</i></span>
+      ); })}
+    </div>
+    {!sample && (
+      <div class="pl-hits" role="group" aria-label="Study time per day. Arrow keys move between days." data-rove>
+        {days.map((d, i) => <span role="img" aria-label={tipOf(d)} data-tip={tipOf(d)} tabindex={i === N - 1 ? 0 : -1}></span>)}
+      </div>
+    )}
+  </div>
+  <div class="pl-x" style={`--n:${N}`} aria-hidden="true">{days.map((d, i) => <span data-now={i === N - 1 ? '' : undefined}>{wd(d.day)}</span>)}</div>
+  <p class="tb-key" aria-hidden="true">{SEGS.map(([k, c]) => <span class="ch-key"><i style={`--c:${c}`}></i>{k === 'focus' ? 'Focus timer' : k === 'mcq' ? 'MCQ bank' : 'Quizzes and exams'}</span>)}</p>
+</div>
+
+<style>
+  .tb-bar { display: flex; flex-direction: column-reverse; gap: 2px; overflow: hidden; }
+  .tb-bar b { min-height: 2px; }
+  .tb-key { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin: 0.85rem 0 0 2.4rem; font-size: 0.75rem; color: var(--muted); }
+</style>

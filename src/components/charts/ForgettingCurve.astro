@@ -1,0 +1,44 @@
+---
+interface Props { curve: { day: number; recall: number }[]; sample?: boolean }
+const { curve, sample = false } = Astro.props;
+const N = curve.length;
+const min = Math.min(...curve.map((p) => p.recall));
+const lo = Math.min(0.5, Math.floor(min * 10) / 10); // honest floor, labelled on the axis
+const y = (r: number) => ((1 - r) / (1 - lo)) * 100;
+const pts = curve.map((p, i) => `${(i + 0.5) * 100} ${y(p.recall).toFixed(2)}`);
+const line = 'M' + pts.join(' L');
+const area = `M50 100 L${pts.join(' L')} L${(N - 0.5) * 100} 100 Z`;
+const pct = (r: number) => `${Math.round(r * 100)}%`;
+const tipOf = (p: { day: number; recall: number }) => `${p.day === 0 ? 'Today' : p.day === 1 ? 'Tomorrow' : `In ${p.day} days`}: ${pct(p.recall)} average predicted recall`;
+const ticks = [0, 7, 14, 21, 30];
+---
+<div class="pl-wrap" aria-hidden={sample ? 'true' : undefined}>
+  <div class="pl" style={`--n:${N}`}>
+    <div class="pl-grid" aria-hidden="true">
+      <span style="top:0%"><em>100%</em></span>
+      <span style={`top:${y(0.9)}%`} data-dash><em class="fc-90">90%</em></span>
+      <span style="top:100%"><em>{pct(lo)}</em></span>
+    </div>
+    <span class="fc-week" style={`left:${(7.5 / N) * 100}%`} aria-hidden="true"><em>1 week</em></span>
+    <svg class="pl-svg" viewBox={`0 0 ${N * 100} 100`} preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="fc-fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity="0.26" /><stop offset="1" stop-color="var(--accent)" stop-opacity="0" /></linearGradient></defs>
+      <path d={area} fill="url(#fc-fade)" />
+      <path d={line} fill="none" stroke="var(--accent)" stroke-width="2.25" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+    </svg>
+    {[0, 7, 30].map((d, i) => <span class="pl-dot" style={`left:${((d + 0.5) / N) * 100}%;top:${y(curve[d].recall)}%;--i:${i * 4}`} aria-hidden="true"></span>)}
+    {!sample && (
+      <div class="pl-hits" role="group" aria-label="Predicted recall over the next 30 days. Arrow keys move between days." data-rove>
+        {curve.map((p, i) => <span role="img" aria-label={tipOf(p)} data-tip={tipOf(p)} tabindex={i === 0 ? 0 : -1}></span>)}
+      </div>
+    )}
+  </div>
+  <div class="pl-x fc-x" style={`--n:${N}`} aria-hidden="true">{curve.map((p) => <span>{ticks.includes(p.day) ? (p.day ? `+${p.day}d` : 'Today') : ''}</span>)}</div>
+</div>
+
+<style>
+  .fc-90 { color: var(--signal) !important; }
+  .fc-week { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--line-strong); pointer-events: none; }
+  .fc-week em { position: absolute; top: 0.2rem; left: 0.35rem; font-style: normal; font-size: 0.6875rem; color: var(--muted); white-space: nowrap; }
+  .fc-x { overflow: visible; }
+  .fc-x span { overflow: visible; }
+</style>
