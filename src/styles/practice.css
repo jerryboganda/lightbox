@@ -1,0 +1,105 @@
+/* Practice area: MCQ option cards (bank, quiz, exam, review), exam player and TOACS runner. */
+.opt { display: flex; align-items: center; gap: 0.85rem; width: 100%; padding: 0.8rem 0.95rem; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); font-size: 0.95rem; text-align: left; transition: border-color var(--d1), background-color var(--d2), opacity var(--d2), transform var(--d1) var(--ease); }
+.opt:not(:disabled):hover { border-color: var(--line-strong); background: color-mix(in oklab, var(--ink) 3%, var(--panel)); }
+.opt:not(:disabled):active { transform: scale(calc(1 - 0.01 * var(--move))); }
+.opt-key { display: grid; place-items: center; flex: none; width: 1.9rem; height: 1.9rem; border-radius: 8px; border: 1px solid var(--line-strong); font-size: 0.8125rem; color: var(--muted); transition: all var(--d2); }
+.opt-picked { border-color: var(--accent); background: var(--glow); }
+.opt-picked .opt-key { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.opt-right { border-color: color-mix(in oklab, var(--ok) 60%, transparent); background: color-mix(in oklab, var(--ok) 12%, var(--panel)); }
+.opt-right .opt-key { background: var(--ok); color: var(--bg); border-color: transparent; }
+.opt-wrong { border-color: color-mix(in oklab, var(--bad) 60%, transparent); background: color-mix(in oklab, var(--bad) 10%, var(--panel)); }
+.opt-wrong .opt-key { background: var(--bad); color: var(--bg); border-color: transparent; }
+.opt-model { border-style: dashed; border-color: var(--line-strong); }
+.opt-dim { color: var(--muted); }
+.opt-dim .opt-key { opacity: 0.6; }
+div.opt { cursor: default; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* Exam player */
+.xp { display: grid; grid-template-columns: minmax(0, 1fr) 17.5rem; gap: 1.5rem; align-items: start; }
+.xp-side { position: sticky; top: 5rem; display: grid; gap: 1rem; }
+.xp-strip { display: none; }
+.xp-clock { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; transition: color var(--d2); }
+.xp-clock[data-state="warn"] { color: var(--signal); }
+.xp-clock[data-state="crit"] { color: var(--bad); }
+.xp-clock[data-state="crit"] .xp-tick { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.qgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.35rem, 1fr)); gap: 0.4rem; }
+.qcell { position: relative; display: grid; place-items: center; height: 2.35rem; border-radius: 9px; border: 1px solid var(--line); font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); background: transparent; transition: background-color var(--d1), border-color var(--d1), color var(--d1), transform var(--d1) var(--ease); }
+.qcell:hover { border-color: var(--line-strong); color: var(--ink); }
+.qcell:active { transform: scale(calc(1 - 0.06 * var(--move))); }
+.qcell[data-s="done"] { background: color-mix(in oklab, var(--accent) 16%, transparent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); color: var(--ink); }
+.qcell[data-s="right"] { background: color-mix(in oklab, var(--ok) 16%, transparent); border-color: color-mix(in oklab, var(--ok) 45%, transparent); color: var(--ink); }
+.qcell[data-s="wrong"] { background: color-mix(in oklab, var(--bad) 14%, transparent); border-color: color-mix(in oklab, var(--bad) 45%, transparent); color: var(--ink); }
+.qcell[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--ink); }
+.qcell[data-flag]::after { content: ""; position: absolute; top: 3px; right: 3px; width: 0.45rem; height: 0.45rem; border-radius: 99px; background: var(--signal); box-shadow: 0 0 0 2px var(--panel); }
+.xp-sheet { position: fixed; inset: auto 0.6rem calc(4.6rem + env(safe-area-inset-bottom)) 0.6rem; margin: 0; max-height: 70dvh; overflow: auto; padding: 1rem; color: var(--ink); background: var(--raised); }
+.xp-sheet:popover-open { animation: rise var(--d2) var(--ease); }
+.xp-sheet::backdrop { background: rgb(0 0 0 / 0.4); }
+.xp-dialog { width: min(28rem, calc(100vw - 2rem)); margin: auto; padding: 1.4rem; color: var(--ink); background: var(--raised); }
+.xp-dialog[open] { animation: rise var(--d2) var(--ease); }
+.xp-dialog::backdrop { background: rgb(0 0 0 / 0.45); backdrop-filter: blur(2px); }
+@media (max-width: 1023px) {
+  .xp { grid-template-columns: minmax(0, 1fr); }
+  .xp-side { display: none; }
+  .xp-strip { position: sticky; top: 3.75rem; z-index: 10; display: flex; align-items: center; gap: 0.5rem; margin: -0.5rem -0.25rem 0; padding: 0.5rem 0.25rem; background: color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter: blur(12px); }
+}
+@media (max-width: 767px) { .xp-strip { top: 3.4rem; } }
+@media (min-width: 768px) { .xp-sheet { left: auto; right: 1rem; bottom: 1rem; width: 24rem; } }
+
+/* Quiz builder */
+.presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 0.75rem; }
+@media (max-width: 520px) { .presets { grid-template-columns: 1fr 1fr; gap: 0.5rem; } .preset { padding: 0.85rem; } .preset:last-child:nth-child(odd) { grid-column: span 2; } }
+.preset { display: flex; flex-direction: column; justify-content: flex-start; padding: 1rem 1.1rem; }
+.preset:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.preset-ic { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 10px; color: var(--accent); background: var(--glow); border: 1px solid color-mix(in oklab, var(--accent) 25%, transparent); transition: transform var(--d3) var(--ease); }
+.preset:not(:disabled):hover .preset-ic { transform: rotate(calc(-8deg * var(--move))) scale(calc(1 + 0.06 * var(--move))); }
+.builder { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 1.25rem; align-items: start; }
+.summary { position: sticky; top: 5rem; }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.switch { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.35rem 0; font-size: 0.875rem; text-align: left; }
+.switch-ui { position: relative; margin-left: auto; width: 2.3rem; height: 1.35rem; flex: none; border-radius: 99px; background: var(--sunk); border: 1px solid var(--line-strong); transition: background-color var(--d2), border-color var(--d2); }
+.switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.35rem - 6px); height: calc(1.35rem - 6px); border-radius: 99px; background: var(--muted); transition: transform var(--d2) var(--ease), background-color var(--d2); }
+.switch[aria-checked="true"] .switch-ui { background: var(--accent); border-color: transparent; }
+.switch[aria-checked="true"] .switch-ui::after { transform: translateX(0.95rem); background: var(--accent-ink); }
+.switch:focus-visible { outline-offset: 4px; }
+input[type="range"] { height: 1.25rem; cursor: pointer; }
+input[type="range"]:disabled { opacity: 0.5; cursor: not-allowed; }
+.dock { display: none; }
+@media (max-width: 1023px) {
+  .builder { grid-template-columns: minmax(0, 1fr); }
+  .summary { position: static; }
+  .dock { position: fixed; z-index: 25; left: 1rem; right: 1rem; bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.6rem 0.55rem 1rem; background: color-mix(in oklab, var(--raised) 92%, transparent); backdrop-filter: blur(12px); animation: rise var(--d3) var(--ease) both 0.3s; }
+  .builder { padding-bottom: 3.5rem; }
+}
+@media (max-width: 767px) { .dock { left: 0.6rem; right: 0.6rem; bottom: calc(4.75rem + env(safe-area-inset-bottom)); } }
+
+/* TOACS station runner: the image sits on a dark lightbox in both themes. */
+.ts { display: grid; grid-template-columns: minmax(0, 1fr) 23rem; gap: 1rem; align-items: start; }
+.ts-stage { position: relative; display: grid; place-items: center; min-height: min(72dvh, 46rem); overflow: hidden; border-radius: 16px; background: #05070a; border: 1px solid var(--line); touch-action: manipulation; user-select: none; }
+.ts-stage img { grid-area: 1 / 1; width: 100%; height: min(72dvh, 46rem); object-fit: contain; }
+.ts-tag { position: absolute; left: 0.75rem; top: 0.75rem; padding: 0.3rem 0.6rem; border-radius: 8px; font-size: 0.75rem; color: #e6edf3; background: rgb(11 15 20 / 0.72); backdrop-filter: blur(8px); border: 1px solid rgb(255 255 255 / 0.08); }
+.ts-zoom { position: absolute; right: 0.75rem; top: 0.75rem; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 9px; color: #e6edf3; background: rgb(11 15 20 / 0.72); backdrop-filter: blur(8px); border: 1px solid rgb(255 255 255 / 0.12); transition: background-color var(--d1); }
+.ts-zoom:hover { background: rgb(30 40 52 / 0.9); }
+.ts-side { position: sticky; top: 5rem; padding: 1.15rem; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); max-height: calc(100dvh - 6rem); overflow: auto; }
+.ts-dots { display: flex; gap: 3px; }
+.ts-dots li { flex: 1; height: 4px; border-radius: 99px; background: var(--line); transition: background-color var(--d2); }
+.ts-dots li[data-g="got"] { background: var(--ok); }
+.ts-dots li[data-g="partial"] { background: var(--signal); }
+.ts-dots li[data-g="missed"] { background: var(--bad); }
+.ts-dots li[aria-current] { background: var(--accent); }
+.ts-cap { max-height: 8.5rem; overflow: auto; white-space: pre-line; font-size: 0.875rem; line-height: 1.55; padding: 0.7rem 0.8rem; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.grade { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0.7rem 0.4rem; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--c) 35%, var(--line)); color: color-mix(in oklab, var(--c) 80%, var(--ink)); background: color-mix(in oklab, var(--c) 8%, transparent); font-size: 0.875rem; transition: background-color var(--d1), transform var(--d1) var(--ease); }
+.grade:hover:not(:disabled) { background: color-mix(in oklab, var(--c) 16%, transparent); }
+.grade:active:not(:disabled) { transform: scale(calc(1 - 0.03 * var(--move))); }
+.grade .kbd { position: absolute; top: 0.35rem; right: 0.35rem; }
+.grade-ok { --c: var(--ok); } .grade-signal { --c: var(--signal); } .grade-bad { --c: var(--bad); }
+@media (max-width: 1023px) {
+  .ts { grid-template-columns: minmax(0, 1fr); }
+  .ts-stage { min-height: 0; height: min(56dvh, 34rem); }
+  .ts-stage img { height: min(56dvh, 34rem); }
+}
+@media (max-width: 767px) {
+  .ts-stage, .ts-stage img { height: min(46dvh, 26rem); }
+  .ts-side { position: static; max-height: none; }
+}

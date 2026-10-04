@@ -1,0 +1,26 @@
+---
+// Draws in from empty; the percentage counts up (motion.ts countUp) unless motion is reduced.
+interface Props { value: number; total: number; label: string; size?: number }
+const { value, total, label, size = 148 } = Astro.props;
+const pct = total ? Math.round((value / total) * 100) : null;
+const R = size / 2 - 10, C = 2 * Math.PI * R;
+const tone = pct === null ? 'var(--muted)' : pct >= 70 ? 'var(--ok)' : pct >= 50 ? 'var(--accent)' : 'var(--signal)';
+---
+<figure class="score" style={`--size:${size}px`} aria-label={pct === null ? `${label}: no scored items` : `${label}: ${pct} percent, ${value} of ${total}`}>
+  <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} class="-rotate-90" aria-hidden="true">
+    <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="var(--line)" stroke-width="9" />
+    {pct !== null && <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke={tone} stroke-width="9" stroke-linecap="round" stroke-dasharray={C} style={`--off:${C * (1 - value / total)};--full:${C}`} class="score-arc" />}
+  </svg>
+  <figcaption aria-hidden="true">
+    {pct === null ? <span class="num text-3xl text-muted">–</span> : <span class="num text-[2.1rem] leading-none"><span data-count={pct}>{pct}</span><span class="text-lg text-muted">%</span></span>}
+    <span class="num mt-1 text-xs text-muted">{pct === null ? 'unscored' : `${value} of ${total}`}</span>
+  </figcaption>
+</figure>
+<style>
+  .score { position: relative; width: var(--size); height: var(--size); flex: none; }
+  .score figcaption { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .score-arc { stroke-dashoffset: var(--off); animation: arc 1.2s var(--ease) both 0.25s; }
+  @keyframes arc { from { stroke-dashoffset: var(--full); } }
+  @media (prefers-reduced-motion: reduce) { .score-arc { animation: none; } }
+  :global([data-motion="reduced"]) .score-arc { animation: none; }
+</style>

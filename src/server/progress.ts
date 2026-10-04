@@ -42,11 +42,13 @@ export function srsReview(userId: number, factId: string, rating: Grade, reviewe
   })();
 }
 
-export function recordAttempt(userId: number, qid: string, choice: string) {
+// ms: time on the question (null when unknown); source: where it was answered.
+export function recordAttempt(userId: number, qid: string, choice: string, ms: number | null = null, source: 'bank' | 'quiz' | 'exam' = 'bank') {
   const m = mcqs.find((x) => x.qid === qid);
-  if (!m || !(choice in m.options)) return null;
+  if (!m || !Object.hasOwn(m.options, choice)) return null;
   const correct = m.key ? (m.key === choice ? 1 : 0) : null;
-  db.prepare('INSERT INTO mcq_attempts (user_id, qid, choice, correct, created_at) VALUES (?, ?, ?, ?, ?)').run(userId, qid, choice, correct, now());
+  const t = ms === null || !Number.isFinite(ms) ? null : Math.max(0, Math.min(86_400_000, Math.round(ms)));
+  db.prepare('INSERT INTO mcq_attempts (user_id, qid, choice, correct, created_at, ms, source) VALUES (?, ?, ?, ?, ?, ?, ?)').run(userId, qid, choice, correct, now(), t, source);
   return { correct, key: m.key };
 }
 
