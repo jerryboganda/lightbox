@@ -87,7 +87,10 @@ const byName = (u: string) => (db.prepare('SELECT id FROM users WHERE username =
 export async function addUser(actorId: number, b: Row): Promise<Result<{ user: UserRow; password: string }>> {
   const c = checkNew(b.username, b.displayName);
   if ('error' in c) return c;
-  const password = await createUser(actorId, c.username, c.name, b.role === 'admin' ? 'admin' : 'member');
+  const role = b.role === 'admin' ? 'admin' : 'member';
+  let password: string;
+  try { password = await createUser(actorId, c.username, c.name, role); } catch { return { error: `@${c.username} already exists.` }; } // taken while hashing (double submit)
+  if (role === 'admin') audit(actorId, 'user.role', `${c.username}:admin`);
   return { user: listUsers([byName(c.username)])[0], password };
 }
 
@@ -129,6 +132,8 @@ export async function userAction(me: SessionUser, id: number, action: unknown): 
   const t = db.prepare('SELECT id, username, role, disabled FROM users WHERE id = ?').get(id) as Row | undefined;
   if (!t) return { error: 'User not found.', status: 404 };
   if (action === 'reset') {
+    // Resetting your own password signs you out with a password shown once: a sole admin who misses it is locked out.
+    if (t.id === me.id) return { error: 'Change your own password from your account page.' };
     const password = await resetPassword(me.id, t.id);
     return { text: `New temporary password for @${t.username}. Their sessions were signed out.`, username: t.username, password, user: listUsers([t.id])[0] };
   }

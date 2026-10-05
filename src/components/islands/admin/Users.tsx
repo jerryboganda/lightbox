@@ -109,7 +109,7 @@ export default function AdminUsers({ users: initial, meId, now, filter: f0 }: Ad
                 </dl>
                 <div className="u-seen text-xs text-muted">{u.lastSeen ? <time dateTime={new Date(u.lastSeen).toISOString()} title={full(u.lastSeen)}>{ago(u.lastSeen, now)}</time> : <span className="text-faint">Never signed in</span>}</div>
                 <div className="u-act">
-                  <button type="button" className="btn btn-sm btn-ghost !px-2" disabled={busy === u.id} onClick={() => act(u, 'reset')} aria-label={`Reset password for @${u.username}`} title="Reset password"><KeyRound size={15} aria-hidden="true" /></button>
+                  {u.id !== meId && <button type="button" className="btn btn-sm btn-ghost !px-2" disabled={busy === u.id} onClick={() => act(u, 'reset')} aria-label={`Reset password for @${u.username}`} title="Reset password"><KeyRound size={15} aria-hidden="true" /></button>}
                   <button type="button" className="btn btn-sm btn-ghost !px-2" disabled={busy === u.id} onClick={() => act(u, 'role')} aria-label={u.role === 'admin' ? `Make @${u.username} a member` : `Make @${u.username} an admin`} title={u.role === 'admin' ? 'Make member' : 'Make admin'}>
                     {u.role === 'admin' ? <ShieldCheck size={15} aria-hidden="true" /> : <Shield size={15} aria-hidden="true" />}
                   </button>
