@@ -48,7 +48,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
           <MarkToggle type="topic" id={t.slug} kind="bookmark" />
           <MarkToggle type="topic" id={t.slug} kind="weak" />
           <CollectMenu client:visible itemType="topic" itemId={t.slug} />
-          <span class="mx-0.5 h-5 w-px bg-line" aria-hidden="true"></span>
+          <span class="mx-0.5 h-5 w-px bg-line max-sm:hidden" aria-hidden="true"></span>
           <a href={`/study/compare?t=${t.slug}`} class="btn btn-sm btn-ghost max-sm:!px-2" title="Compare with other topics"><Icon name="Columns3" size={15} /><span class="max-sm:sr-only">Compare</span></a>
           <button type="button" class="btn btn-sm btn-ghost max-sm:!px-2" data-print title="Save as PDF"><Icon name="Printer" size={15} /><span class="max-sm:sr-only">Save as PDF</span></button>
           <a href={`/tutor?topic=${t.slug}`} class="btn btn-sm btn-ghost max-sm:!px-2" title="Ask the AI tutor about this topic"><Icon name="Sparkles" size={15} /><span class="max-sm:sr-only">Ask tutor</span></a>
