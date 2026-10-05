@@ -15,12 +15,11 @@ const serious = async (page: Page, include?: string) => {
   return r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id}: ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(', ')}`);
 };
 
-// A second account (made through the admin page) that signs in over the API, so the e2e admin has someone to talk to.
+// A second account (made through the admin API) that signs in over the API, so the e2e admin has someone to talk to.
 async function classmate(page: Page, playwright: PlaywrightWorkerArgs['playwright'], baseURL: string) {
   const tag = stamp(), username = `mate-${tag}`, name = `Mate ${tag.slice(-5).toUpperCase()}`, Origin = baseURL;
-  const html = await (await page.request.post('/admin', { form: { action: 'create', username, displayName: name, role: 'member' }, headers: { Origin } })).text();
-  const temp = html.match(/data-secret>([^<]+)</)?.[1];
-  expect(temp, 'admin page shows the temporary password').toBeTruthy();
+  const temp = ((await (await page.request.post('/api/admin/users', { data: { username, displayName: name, role: 'member' } })).json()) as { password?: string }).password;
+  expect(temp, 'the admin API returns the temporary password').toBeTruthy();
   const ctx: APIRequestContext = await playwright.request.newContext({ baseURL });
   await ctx.post('/api/auth/login', { form: { username, password: temp! }, headers: { Origin } });
   await ctx.post('/api/auth/password', { form: { current: temp!, next: 'mate-chosen-pass-7', confirm: 'mate-chosen-pass-7' }, headers: { Origin } });
@@ -221,7 +220,8 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.goto('/review#mcqs');
     const card = page.locator('#mcqs article').first();
-    await card.scrollIntoViewIfNeeded();
+    // The thread itself must be on screen to hydrate (client:visible); after a vote the poll's results push it below a phone's fold.
+    await card.getByRole('button', { name: /^Discussion/ }).scrollIntoViewIfNeeded();
     await hydrated(page, 'Thread');
     await card.getByRole('button', { name: /^Discussion/ }).click();
     await page.waitForTimeout(700);

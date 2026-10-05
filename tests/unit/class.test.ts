@@ -92,6 +92,7 @@ describe('comments', () => {
 
   it('masks hidden comments from members and shows admins the reason', () => {
     const c = ok(postComment(bob, { type: 'topic', id: topics[1].slug, body: 'Rude words' })).comment;
+    const under = ok(postComment(ann, { type: 'topic', id: topics[1].slug, body: 'Before the hide', parentId: c.id })).comment;
     db.prepare("UPDATE comments SET hidden = 1, hidden_by = ?, hidden_reason = 'Off topic' WHERE id = ?").run(boss.id, c.id);
     const asMember = thread(ann, { type: 'topic', id: topics[1].slug }).comments[0];
     expect(asMember).toMatchObject({ hidden: true, body: '', author: null });
@@ -99,6 +100,9 @@ describe('comments', () => {
     expect(thread(boss, { type: 'topic', id: topics[1].slug }).comments[0]).toMatchObject({ hidden: true, body: 'Rude words', hiddenReason: 'Off topic' });
     expect(editComment(bob, c.id, 'Nicer')).toMatchObject({ status: 403 });
     expect(voteComment(ann, c.id, true)).toMatchObject({ status: 404 });
+    // No new replies under a hidden comment (the thread offers none), so it can't keep a moderated exchange going or ping its author.
+    expect(postComment(ann, { type: 'topic', id: topics[1].slug, body: 'Replying anyway', parentId: c.id })).toMatchObject({ status: 404 });
+    expect(postComment(boss, { type: 'topic', id: topics[1].slug, body: 'Via its reply', parentId: under.id })).toMatchObject({ status: 404 });
   });
 
   it('rate limits members to 8 comments in 5 minutes, but not admins', () => {
