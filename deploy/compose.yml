@@ -19,6 +19,9 @@ services:
     container_name: lightbox-backup
     restart: unless-stopped
     command: ["node", "deploy/backup.mjs"]
+    # The image bakes in the web HEALTHCHECK; the backup container never serves 4321.
+    healthcheck:
+      disable: true
     environment:
       DB_PATH: /data/lightbox.db
       BACKUP_DIR: /backups
