@@ -30,6 +30,15 @@ describe('accounts', () => {
     expect(await addUser(me().id, { username: 'ok-name', displayName: 'n'.repeat(61) })).toMatchObject({ error: /60 characters/ });
   });
 
+  it('audits an admin grant on create, and a double submit errors instead of throwing', async () => {
+    expect(await addUser(me().id, { username: 'new.admin', role: 'admin' })).toMatchObject({ user: { role: 'admin' } });
+    expect(audits('user.role').at(-1)?.target).toBe('new.admin:admin');
+    db.prepare("UPDATE users SET role = 'member' WHERE username = 'new.admin'").run(); // boss stays the only admin below
+    const [a, b] = await Promise.all([addUser(me().id, { username: 'twice' }), addUser(me().id, { username: 'twice' })]);
+    expect(a).toHaveProperty('password');
+    expect(b).toMatchObject({ error: '@twice already exists.' });
+  });
+
   it('bulk-creates only when every line passes, and audits each account', async () => {
     const bad = await bulkAdd(me().id, 'bilal.k, Dr Bilal Khan\nbad name, Oops\nbilal.k, Again\namna, Taken\n\n# a comment');
     expect(bad).toMatchObject({ error: /3 lines need fixing/ });
@@ -53,6 +62,9 @@ describe('accounts', () => {
     expect(r).toMatchObject({ username: 'amna', password: expect.any(String) });
     expect(readSession(token)).toBeNull();
     expect(await userAction(me(), me().id, 'toggle')).toMatchObject({ error: /your own/ });
+    const mine = createSession(me().id);
+    expect(await userAction(me(), me().id, 'reset')).toMatchObject({ error: /account page/ });
+    expect(readSession(mine.token)).not.toBeNull();
     expect(await userAction(me(), amna, 'toggle')).toMatchObject({ user: { disabled: 1 } });
     expect(await userAction(me(), amna, 'toggle')).toMatchObject({ user: { disabled: 0 } });
     expect(await userAction(me(), me().id, 'role')).toMatchObject({ error: 'Keep at least one admin.' });
