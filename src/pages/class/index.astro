@@ -1,0 +1,333 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Poll from '../../components/islands/Poll';
+import { classStats, feed, leaderboard, openPolls, POINTS, STREAK_CAP, type Board, type Standing } from '../../server/class';
+import { ago, sharedCollections } from '../../server/personal';
+
+const me = Astro.locals.user!;
+const stats = classStats();
+const boards: Record<Board, Standing[]> = { week: leaderboard('week'), all: leaderboard('all') };
+const polls = openPolls(3);
+const recent = feed(6);
+const shared = sharedCollections().slice(0, 6);
+const mine = boards.week.find((r) => r.id === me.id);
+
+const initials = (n: string) => n.split(/\s+/).filter(Boolean).map((s) => s[0]).join('').slice(0, 2).toUpperCase();
+const acc = (r: Standing) => (r.keyed ? `${Math.round((r.right / r.keyed) * 100)}%` : '–');
+const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
+const TYPE: Record<string, string> = { fact: 'Fact', topic: 'Topic', mcq: 'MCQ', image: 'Image', dispute: 'Dispute' };
+const TILES = [
+  { icon: 'UsersRound', n: stats.members, label: 'Members', sub: 'in the class' },
+  { icon: 'Activity', n: stats.activeToday, label: 'Active today', sub: 'since midnight' },
+  { icon: 'MessagesSquare', n: stats.discussions, label: 'Comments', sub: 'last 7 days' },
+  { icon: 'Vote', n: stats.openPolls, label: 'Open polls', sub: 'need your vote' },
+];
+const SHOWN = 10; // podium + rows before "Show everyone"
+// Podium: the top three with points. Everyone else (and everyone at zero) is in the ranked list.
+const split = (rows: Standing[]) => {
+  const podium = rows.slice(0, 3).filter((r) => r.points > 0);
+  const rest = rows.slice(podium.length);
+  return { podium, head: rest.slice(0, SHOWN - podium.length), tail: rest.slice(SHOWN - podium.length) };
+};
+const RULES = [
+  ['Layers', 'Card review', `${POINTS.review} point each`],
+  ['Target', 'MCQ right, keyed questions', `${POINTS.mcq} points per question, once per period`],
+  ['Timer', 'Exam or TOACS item answered', `${POINTS.exam} point each`],
+  ['ArrowBigUp', 'Upvote on your comment', `${POINTS.upvote} points each`],
+  ['Flame', 'Current streak', `${POINTS.streakDay} points a day, up to ${STREAK_CAP.week} days for the week and ${STREAK_CAP.all} for all time`],
+];
+---
+<App title="Class">
+  <header class="head reveal" style="--i:0">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-medium">Class</h1>
+      <p class="mt-1 max-w-2xl text-muted">How the class is studying, what it's discussing and where it disagrees.</p>
+    </div>
+    {mine && mine.points > 0 && (
+      <a href="#board" class="you-chip" aria-label={`You are number ${mine.rank} this week with ${mine.points} points`}>
+        <span class="you-rank num">#{mine.rank}</span><span class="text-muted">this week</span><span class="num text-ink">{mine.points}</span><span class="text-muted">pts</span>
+      </a>
+    )}
+  </header>
+
+  <section class="stats mt-6" aria-label="Class at a glance">
+    {TILES.map((t, i) => (
+      <div class="panel stat reveal" style={`--i:${i + 1}`}>
+        <span class="stat-i"><Icon name={t.icon} size={17} /></span>
+        <div class="min-w-0">
+          <div class="num text-[1.6rem] leading-none" data-count={t.n}>{t.n}</div>
+          <div class="mt-1.5 text-sm">{t.label}</div>
+          <div class="truncate text-xs text-faint">{t.sub}</div>
+        </div>
+      </div>
+    ))}
+  </section>
+
+  <div class="layout mt-5">
+    <div class="stack">
+    <section id="board" class="panel tile board o1 reveal" style="--i:5" aria-labelledby="board-h">
+      <header class="tile-h">
+        <h2 id="board-h" class="flex items-center gap-2"><Icon name="Trophy" size={17} class="text-signal" />Leaderboard</h2>
+        <div class="seg" role="radiogroup" aria-label="Period" data-board-seg>
+          <button type="button" role="radio" aria-checked="true" data-board="week" title="The last 7 days">Week</button>
+          <button type="button" role="radio" aria-checked="false" data-board="all" tabindex="-1">All time</button>
+        </div>
+      </header>
+
+      {(Object.entries(boards) as [Board, Standing[]][]).map(([key, rows]) => {
+        const { podium, head, tail } = split(rows);
+        const row = (r: Standing) => (
+          <tr class:list={[{ 'is-you': r.id === me.id }]}>
+            <td class="rank num">{r.rank}</td>
+            <th scope="row" class="who">
+              <span class="flex min-w-0 items-center gap-2.5">
+                <span class:list={['av', { 'is-admin': r.admin }]} aria-hidden="true">{initials(r.name)}</span>
+                <span class="min-w-0">
+                  <span class="flex items-center gap-1.5"><span class="truncate font-medium">{r.name}</span>{r.id === me.id && <span class="badge s-agreed !py-0.5">You</span>}</span>
+                  <span class="sub num">{plural(r.cards, 'card')}{r.keyed ? ` · ${acc(r)} right` : ''}{r.streak > 0 ? ` · ${r.streak}d streak` : ''}</span>
+                </span>
+              </span>
+            </th>
+            <td class="num pts">{r.points}</td>
+            <td class="num col-x">{r.streak ? <span class="text-signal">{r.streak}d</span> : <span class="text-faint">–</span>}</td>
+            <td class="num col-x">{r.cards}</td>
+            <td class="num col-x">{acc(r)}</td>
+          </tr>
+        );
+        return (
+          <div class="pane" data-pane={key} hidden={key !== 'week'}>
+            {podium.length ? (
+              <ol class="podium" aria-label="Top three">
+                {podium.map((r, i) => (
+                  <li class:list={['pod', `p${i + 1}`, { 'is-you': r.id === me.id }]}>
+                    <span class:list={['pav', { 'is-admin': r.admin }]} aria-hidden="true">{initials(r.name)}</span>
+                    <span class="pname">{r.name}{r.id === me.id && <span class="sr-only"> (you)</span>}</span>
+                    <span class="num text-xs text-muted"><span class="text-ink">{r.points}</span> pts</span>
+                    <span class="plinth" aria-hidden="true"><span class="num">{r.rank}</span></span>
+                    <span class="sr-only">Rank {r.rank}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div class="board-empty">
+                <Icon name="Sparkles" size={18} class="text-accent" />
+                <p class="text-sm text-muted">No points {key === 'week' ? 'in the last 7 days' : 'yet'}. Review cards or answer MCQs to open the board.</p>
+              </div>
+            )}
+            {head.length > 0 && (
+              <table class="ranks">
+                <caption class="sr-only">{key === 'week' ? 'Leaderboard for the last 7 days' : 'All-time leaderboard'}</caption>
+                <thead><tr><th scope="col" class="rank">#</th><th scope="col">Name</th><th scope="col" class="pts">Points</th><th scope="col" class="col-x">Streak</th><th scope="col" class="col-x">Cards</th><th scope="col" class="col-x">MCQ</th></tr></thead>
+                <tbody>{head.map(row)}</tbody>
+              </table>
+            )}
+            {tail.length > 0 && (
+              <details class="more">
+                <summary class="btn btn-sm btn-ghost mt-2"><Icon name="ChevronDown" size={15} class="chev" />Show everyone ({rows.length})</summary>
+                <table class="ranks">
+                  <caption class="sr-only">The rest of the class</caption>
+                  <thead class="sr-only"><tr><th scope="col">#</th><th scope="col">Name</th><th scope="col">Points</th><th scope="col">Streak</th><th scope="col">Cards</th><th scope="col">MCQ</th></tr></thead>
+                  <tbody>{tail.map(row)}</tbody>
+                </table>
+              </details>
+            )}
+          </div>
+        );
+      })}
+
+      <details class="rules mt-4">
+        <summary class="flex cursor-pointer list-none items-center gap-2 text-sm text-muted hover:text-ink"><Icon name="CircleHelp" size={15} />How points work<Icon name="ChevronDown" size={15} class="chev ml-auto" /></summary>
+        <ul class="mt-3 grid gap-2 text-sm">
+          {RULES.map(([icon, what, worth]) => <li class="flex items-start gap-2.5"><Icon name={icon} size={15} class="mt-0.5 shrink-0 text-faint" /><span><span class="text-ink">{what}</span><span class="text-muted"> · {worth}</span></span></li>)}
+        </ul>
+        <p class="mt-3 text-xs text-faint">Week counts the last 7 days. Only these totals are shared; your notes, highlights and bookmarks stay private.</p>
+      </details>
+    </section>
+      <section class="panel tile o3 reveal" style="--i:6" aria-labelledby="feed-h">
+        <header class="tile-h"><h2 id="feed-h" class="flex items-center gap-2"><Icon name="MessagesSquare" size={17} class="text-accent" />Recent discussion</h2></header>
+        {recent.length ? (
+          <ul class="feed mt-2">
+            {recent.map((f) => (
+              <li>
+                <a href={f.href} class="feed-row">
+                  <span class="av sm" aria-hidden="true">{initials(f.author)}</span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-[0.8125rem] text-muted"><span class="font-medium text-ink">{f.author}</span> {f.reply ? 'replied on' : 'on'} <span class="text-ink/90">{f.title}</span></span>
+                    <span class="snippet">{f.body}</span>
+                    <span class="mt-1 flex items-center gap-2 text-[11px] text-faint"><span class="badge s-neutral !py-0.5">{TYPE[f.type] ?? f.type}</span><time datetime={new Date(f.createdAt).toISOString()}>{ago(f.createdAt)}</time></span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div class="empty">
+            <span class="empty-i"><Icon name="MessagesSquare" size={19} /></span>
+            <p class="font-medium">Quiet so far</p>
+            <p class="text-sm text-muted">Every fact, topic and MCQ has a discussion. Ask a question or share a mnemonic and it shows up here.</p>
+            <a href="/study" class="btn btn-sm mt-2">Browse topics<Icon name="ArrowRight" size={14} /></a>
+          </div>
+        )}
+      </section>
+    </div>
+    <div class="side">
+      <section class="panel tile o2 reveal" style="--i:7" aria-labelledby="polls-h">
+        <header class="tile-h">
+          <h2 id="polls-h" class="flex items-center gap-2"><Icon name="Vote" size={17} class="text-accent" />Open polls</h2>
+          <a href="/review#mcqs" class="tile-link">Disputed keys<Icon name="ArrowUpRight" size={15} /></a>
+        </header>
+        {polls.length ? (
+          <div class="mt-3 grid gap-3">
+            {polls.map((p) => (p.item_type === 'mcq' ? <Poll client:visible mcqQid={p.item_id!} /> : <Poll client:visible pollId={p.id} />))}
+          </div>
+        ) : (
+          <div class="empty">
+            <span class="empty-i"><Icon name="Vote" size={19} /></span>
+            <p class="font-medium">No open polls right now</p>
+            <p class="text-sm text-muted">Every disputed MCQ has a class poll. Say which answer you'd pick and see how the class splits.</p>
+            <a href="/review#mcqs" class="btn btn-sm mt-2">Vote on disputed keys<Icon name="ArrowRight" size={14} /></a>
+          </div>
+        )}
+      </section>
+      <section class="panel tile o4 reveal" style="--i:8" aria-labelledby="shared-h">
+        <header class="tile-h">
+          <h2 id="shared-h" class="flex items-center gap-2"><Icon name="FolderOpen" size={17} class="text-accent" />Shared collections</h2>
+          <a href="/library/shared" class="tile-link">All<Icon name="ArrowUpRight" size={15} /></a>
+        </header>
+        {shared.length ? (
+          <ul class="cols mt-2">
+            {shared.map((c) => (
+              <li class="col-row">
+                <span class="av sm" aria-hidden="true">{initials(c.ownerName)}</span>
+                <span class="min-w-0 flex-1">
+                  <a href={`/library/c/${c.id}`} class="stretch block truncate text-sm font-medium hover:text-accent">{c.name}</a>
+                  <span class="block truncate text-xs text-faint">{c.ownerId === me.id ? 'You' : c.ownerName} · {plural(c.count, 'item')} · {ago(c.updatedAt)}</span>
+                </span>
+                <Icon name="ChevronRight" size={16} class="shrink-0 text-faint" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div class="empty">
+            <span class="empty-i"><Icon name="FolderOpen" size={19} /></span>
+            <p class="font-medium">Nothing shared yet</p>
+            <p class="text-sm text-muted">Turn on Share with class on one of your collections and it appears here for everyone.</p>
+            <a href="/library?tab=collections" class="btn btn-sm mt-2">Your collections<Icon name="ArrowRight" size={14} /></a>
+          </div>
+        )}
+      </section>
+    </div>
+  </div>
+</App>
+
+<script>
+  import { countUp } from '../../scripts/motion';
+  function init() {
+    const seg = document.querySelector<HTMLElement>('[data-board-seg]');
+    if (!seg) return;
+    countUp();
+    const btns = [...seg.querySelectorAll<HTMLButtonElement>('[data-board]')];
+    const pick = (b: HTMLButtonElement, focus = false) => {
+      btns.forEach((x) => { const on = x === b; x.setAttribute('aria-checked', String(on)); x.tabIndex = on ? 0 : -1; });
+      document.querySelectorAll<HTMLElement>('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== b.dataset.board; });
+      if (focus) b.focus();
+    };
+    btns.forEach((b, i) => {
+      b.addEventListener('click', () => pick(b));
+      b.addEventListener('keydown', (e) => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+        e.preventDefault();
+        pick(btns[(i + (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1) + btns.length) % btns.length], true);
+      });
+    });
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+  .you-chip { display: inline-flex; align-items: baseline; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 99px; border: 1px solid color-mix(in oklab, var(--accent) 35%, var(--line)); background: var(--glow); font-size: 0.8125rem; transition: border-color var(--d1); }
+  .you-chip:hover { border-color: var(--accent); }
+  .you-rank { font-size: 1rem; color: color-mix(in oklab, var(--accent) 75%, var(--ink)); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+  .stat { display: flex; align-items: flex-start; gap: 0.85rem; padding: 1rem 1.1rem; }
+  .stat-i { display: grid; place-items: center; flex: none; width: 2.25rem; height: 2.25rem; border-radius: 11px; background: var(--glow); color: var(--accent); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 1rem; align-items: start; }
+  .stack, .side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+  .tile { padding: 1.25rem 1.35rem; }
+  .tile-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+  .tile-h h2 { font-size: 0.95rem; font-weight: 500; }
+  .tile-link { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1); }
+  .tile-link:hover { color: var(--accent); }
+
+  .av, .pav { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; border-radius: 99px; font-size: 0.6875rem; font-weight: 600; background: var(--glow); color: color-mix(in oklab, var(--accent) 62%, var(--ink)); border: 1px solid color-mix(in oklab, var(--accent) 32%, transparent); }
+  .av.sm { width: 1.75rem; height: 1.75rem; font-size: 0.625rem; }
+  .av.is-admin, .pav.is-admin { background: color-mix(in oklab, var(--edition) 14%, transparent); color: color-mix(in oklab, var(--edition) 62%, var(--ink)); border-color: color-mix(in oklab, var(--edition) 34%, transparent); }
+
+  /* podium: DOM order 1-2-3 for screen readers; shown 2-1-3 */
+  .podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 0.6rem; margin: 1.25rem auto 0; max-width: 30rem; }
+  .pod { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; min-width: 0; text-align: center; animation: rise var(--d4) var(--ease) both; }
+  .pod.p1 { order: 2; animation-delay: 260ms; } .pod.p2 { order: 1; animation-delay: 140ms; } .pod.p3 { order: 3; animation-delay: 60ms; }
+  .pav { width: 2.6rem; height: 2.6rem; font-size: 0.8125rem; }
+  .p1 .pav { width: 3.25rem; height: 3.25rem; font-size: 0.9375rem; box-shadow: 0 0 0 4px color-mix(in oklab, var(--signal) 22%, transparent), 0 10px 30px -8px color-mix(in oklab, var(--signal) 45%, transparent); border-color: color-mix(in oklab, var(--signal) 55%, transparent); background: color-mix(in oklab, var(--signal) 14%, transparent); color: color-mix(in oklab, var(--signal) 70%, var(--ink)); }
+  .pname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; font-weight: 500; }
+  .pod.is-you .pname { color: color-mix(in oklab, var(--accent) 75%, var(--ink)); }
+  .plinth { position: relative; display: grid; place-items: start center; width: 100%; margin-top: 0.35rem; padding-top: 0.5rem; border-radius: 12px 12px 4px 4px; border: 1px solid var(--line); border-bottom: 0; background: linear-gradient(to bottom, color-mix(in oklab, var(--ink) 6%, var(--panel)), var(--panel)); transform-origin: bottom; animation: grow-y var(--d4) var(--ease) both; animation-delay: inherit; }
+  .plinth .num { font-size: 1.25rem; color: var(--muted); }
+  .p1 .plinth { height: 5.75rem; border-color: color-mix(in oklab, var(--signal) 40%, var(--line)); background: linear-gradient(to bottom, color-mix(in oklab, var(--signal) 16%, var(--panel)), var(--panel)); }
+  .p1 .plinth .num { color: color-mix(in oklab, var(--signal) 80%, var(--ink)); font-size: 1.5rem; }
+  .p2 .plinth { height: 4.25rem; } .p3 .plinth { height: 3.1rem; }
+  @keyframes grow-y { from { transform: scaleY(0); } }
+  .board-empty { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; padding: 0.9rem 1rem; border-radius: 12px; border: 1px dashed var(--line-strong); }
+
+  .ranks { width: 100%; margin-top: 1rem; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
+  .ranks thead th { padding: 0 0.6rem 0.4rem; font-size: 0.6875rem; font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); text-align: right; }
+  .ranks thead th:nth-child(2) { text-align: left; }
+  .ranks td, .ranks tbody th { padding: 0.5rem 0.6rem; border-top: 1px solid var(--line); text-align: right; font-weight: inherit; vertical-align: middle; }
+  .ranks .who { text-align: left; width: 100%; max-width: 0; }
+  .ranks .rank { width: 2.25rem; text-align: center; color: var(--muted); }
+  .ranks .pts { color: var(--ink); font-weight: 500; }
+  .ranks .col-x { color: var(--muted); }
+  .ranks .sub { display: none; font-size: 0.75rem; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ranks tr.is-you td, .ranks tr.is-you th { background: var(--glow); border-top-color: color-mix(in oklab, var(--accent) 30%, var(--line)); }
+  .ranks tr.is-you td:first-child { border-radius: 10px 0 0 10px; } .ranks tr.is-you td:last-child { border-radius: 0 10px 10px 0; }
+  .more summary { list-style: none; } .more summary::-webkit-details-marker { display: none; }
+  .more[open] summary { display: none; }
+  .more .ranks { margin-top: 0; }
+  .rules { border-top: 1px solid var(--line); padding-top: 0.9rem; }
+  .rules summary::-webkit-details-marker { display: none; }
+  .chev { transition: transform var(--d2) var(--ease); }
+  .rules[open] .chev { transform: rotate(180deg); }
+
+  .empty { display: grid; justify-items: center; gap: 0.3rem; padding: 1.6rem 1rem 1.2rem; text-align: center; }
+  .empty-i { display: grid; place-items: center; width: 2.6rem; height: 2.6rem; margin-bottom: 0.3rem; border-radius: 13px; background: var(--glow); color: var(--accent); }
+
+  .feed { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .feed li + li { border-top: 1px solid var(--line); }
+  .feed-row { display: flex; gap: 0.7rem; padding: 0.75rem 0.4rem; margin-inline: -0.4rem; border-radius: 10px; transition: background-color var(--d1); }
+  .feed-row:hover { background: color-mix(in oklab, var(--ink) 4%, transparent); }
+  .snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 0.15rem; font-size: 0.875rem; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-line; }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .cols li + li { border-top: 1px solid var(--line); }
+  .col-row { position: relative; display: flex; align-items: center; gap: 0.7rem; padding: 0.65rem 0.4rem; margin-inline: -0.4rem; border-radius: 10px; transition: background-color var(--d1); }
+  .col-row:hover { background: color-mix(in oklab, var(--ink) 4%, transparent); }
+  .stretch::after { content: ""; position: absolute; inset: 0; border-radius: 10px; }
+
+  /* One column: the board, then polls (actionable), then the feed and collections. */
+  @media (max-width: 1023px) { .layout { display: flex; flex-direction: column; align-items: stretch; } .stack, .side { display: contents; } .o1 { order: 1; } .o2 { order: 2; } .o3 { order: 3; } .o4 { order: 4; } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) {
+    .tile { padding: 1rem; }
+    .stats { gap: 0.6rem; }
+    .stat { padding: 0.85rem; gap: 0.65rem; }
+    .stat-i { width: 2rem; height: 2rem; }
+    .ranks .col-x, .ranks thead .col-x { display: none; }
+    .ranks .sub { display: block; }
+  }
+  @media (prefers-reduced-motion: reduce) { .pod, .plinth { animation: none; } }
+  :global([data-motion="reduced"]) .pod, :global([data-motion="reduced"]) .plinth { animation: none; }
+</style>

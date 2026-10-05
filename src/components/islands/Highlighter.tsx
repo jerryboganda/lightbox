@@ -3,9 +3,10 @@
 // Mounted once in App.astro with transition:persist, so listeners live for the whole session.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as RKeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Layers, Search, StickyNote, Trash2, X } from 'lucide-react';
+import { Copy, Flag, Layers, Search, StickyNote, Trash2, X } from 'lucide-react';
 import { toast } from '../../scripts/toast';
 import { reduced } from '../../scripts/motion';
+import { ReportDialog, type ReportTarget } from './ReportButton';
 import '../../styles/personal.css';
 
 type Color = 'amber' | 'cyan' | 'green' | 'violet';
@@ -120,6 +121,13 @@ function capture(): Sel | null {
   return { start, end, quote, prefix: s.text.slice(Math.max(0, start - CTX), start), suffix: s.text.slice(end, end + CTX), factId, phone: isPhone() };
 }
 
+// What a selection can be reported against: its fact, else the topic note or fact page it sits on.
+function reportable(s: Sel): ReportTarget | null {
+  const [, a, b, c] = location.pathname.split('/');
+  const id = s.factId ?? (a === 'facts' && b && !c ? decodeURIComponent(b) : null);
+  return id ? { itemType: 'fact', itemId: id } : a === 'study' && c && c !== 'print' ? { itemType: 'topic', itemId: decodeURIComponent(c) } : null;
+}
+
 // Open the Ctrl K palette with the selection typed in.
 function searchFor(q: string) {
   Object.assign(window as any, { lbPaletteWanted: true, lbPaletteQuery: q });
@@ -136,6 +144,7 @@ export default function Highlighter() {
   const [card, setCard] = useState<{ front: string; back: string; factId: string | null; path: string; loading: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState('');
+  const [report, setReport] = useState<ReportTarget | null>(null);
   const hls = useRef(new Map<number, Hl>());
   const selRef = useRef<Sel | null>(null);
   const bar = useRef<HTMLDivElement>(null), pop = useRef<HTMLDivElement>(null), dlg = useRef<HTMLDialogElement>(null);
@@ -409,12 +418,19 @@ export default function Highlighter() {
     bs[n]?.focus();
   };
 
-  // Phase 3 adds "Report" to this list.
+  const reportSel = () => {
+    const s = selRef.current, t = s && reportable(s);
+    if (!s || !t) return;
+    clearSel();
+    setReport({ ...t, quote: s.quote });
+  };
+
   const actions = [
     { label: 'Note', short: 'Note', icon: StickyNote, run: addNote },
     { label: 'Make a flashcard', short: 'Flashcard', icon: Layers, run: makeCard },
     { label: 'Copy with source', short: 'Copy', icon: Copy, run: copy },
     { label: 'Search Lightbox', short: 'Search', icon: Search, run: search },
+    ...(sel && reportable(sel) ? [{ label: 'Report a problem', short: 'Report', icon: Flag, run: reportSel }] : []),
   ];
   const h = edit ? hls.current.get(edit.id) : undefined;
   const spring = rm ? { duration: 0.12 } : { type: 'spring' as const, stiffness: 560, damping: 34, mass: 0.7 };
@@ -482,6 +498,7 @@ export default function Highlighter() {
           </form>
         )}
       </dialog>
+      <ReportDialog target={report} onClose={() => setReport(null)} />
       <div className="sr-only" aria-live="polite">{live}</div>
     </>
   );
