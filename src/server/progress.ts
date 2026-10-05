@@ -45,7 +45,7 @@ export function srsReview(userId: number, factId: string, rating: Grade, reviewe
   return db.transaction(() => {
     if (clientId && db.prepare('SELECT 1 FROM srs_log WHERE client_id = ?').get(clientId)) return true; // already synced
     const row = db.prepare('SELECT card FROM srs_cards WHERE user_id = ? AND fact_id = ?').get(userId, factId) as { card: string } | undefined;
-    const at = new Date(Math.min(reviewedAt, now()));
+    const at = new Date(Math.min(Math.max(reviewedAt, now() - 7 * 86_400_000), now())); // offline syncs may be days late; older stamps would only fake streaks
     const { card } = scheduler.next(row ? revive(row.card) : createEmptyCard(at), at, rating);
     db.prepare(`INSERT INTO srs_cards (user_id, fact_id, card, due, introduced) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (user_id, fact_id) DO UPDATE SET card = excluded.card, due = excluded.due`)
