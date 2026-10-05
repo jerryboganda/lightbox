@@ -71,7 +71,8 @@ Every page needs a sign-in except `/login`. Health checks and the offline assets
 | `DB_PATH` | SQLite file. Defaults to `./data/lightbox.db`; Docker uses `/data/lightbox.db`. |
 | `HOST`, `PORT` | Where the Node server listens. Docker uses `0.0.0.0:4321`. |
 | `OPENCODE_API_KEY` | Key for the OpenCode Go gateway. Without it, the AI features show "AI unavailable" and everything else works. |
-| `AI_MODEL` | The model on the Go gateway. Default `deepseek-v4-flash`. |
+| `AI_MODEL` | The model on the Go gateway. Default `deepseek-v4.1-flash`. |
+| `AI_REASONING` | Thinking effort sent as `reasoning_effort`. Default `max`; set it empty to omit. Thinking tokens share `max_tokens` on the gateway, and the per-feature ceilings already leave room for it. |
 | `AI_DAILY_CAP` | AI requests per person per day. Default 30. |
 | `AI_FALLBACK` | Set to `zen` to fall back to the paid OpenCode Zen gateway when Go fails. Empty means no fallback. |
 | `AI_FALLBACK_MODEL` | The model to use on the fallback gateway. |

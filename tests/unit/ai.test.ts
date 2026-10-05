@@ -47,7 +47,7 @@ describe('gateway', () => {
     expect(url).toBe('https://opencode.ai/zen/go/v1/chat/completions');
     expect(init.method).toBe('POST');
     expect(init.headers).toEqual({ authorization: 'Bearer test-key', 'content-type': 'application/json', 'x-opencode-session': 'lightbox-u7-c9', 'user-agent': 'lightbox-tutor/1.0' });
-    expect(JSON.parse(init.body)).toMatchObject({ model: 'deepseek-v4-flash', stream: false, max_tokens: 300, messages: [{ role: 'user', content: 'hi' }] });
+    expect(JSON.parse(init.body)).toMatchObject({ model: 'deepseek-v4.1-flash', reasoning_effort: 'max', stream: false, max_tokens: 300, messages: [{ role: 'user', content: 'hi' }] });
     expect(result).toMatchObject({ cached: false, tokens: 42, quota: { used: 1, cap: 30 } });
     expect(db.prepare('SELECT n, tokens FROM ai_usage WHERE user_id = ?').get(ids['ai-m1'])).toEqual({ n: 1, tokens: 42 });
 

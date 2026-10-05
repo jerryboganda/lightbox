@@ -27,7 +27,9 @@ const env = () => {
   return {
     key: (process.env.OPENCODE_API_KEY ?? '').trim(),
     url: `${(process.env.AI_BASE_URL || GO).replace(/\/+$/, '')}/chat/completions`, // AI_BASE_URL: tests only
-    model: process.env.AI_MODEL?.trim() || 'deepseek-v4-flash',
+    model: process.env.AI_MODEL?.trim() || 'deepseek-v4.1-flash',
+    // Thinking effort sent as reasoning_effort (Go gateway counts thinking tokens inside max_tokens). '' omits the hint.
+    reasoning: process.env.AI_REASONING === undefined ? 'max' : process.env.AI_REASONING.trim(),
     fallback: process.env.AI_FALLBACK === 'zen' ? process.env.AI_FALLBACK_MODEL?.trim() || '' : '',
     cap: Number.isFinite(cap) && cap >= 0 ? cap : 30,
   };
@@ -123,7 +125,7 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
           method: 'POST',
           signal: o.signal ? AbortSignal.any([o.signal, idle.signal]) : idle.signal,
           headers: { authorization: `Bearer ${c.key}`, 'content-type': 'application/json', 'x-opencode-session': o.session, 'user-agent': 'lightbox-tutor/1.0' },
-          body: JSON.stringify({ model: m, messages: o.messages, stream: !!o.stream, max_tokens: o.maxTokens ?? 800, temperature: o.temperature ?? 0.3 }),
+          body: JSON.stringify({ model: m, messages: o.messages, stream: !!o.stream, max_tokens: o.maxTokens ?? 800, temperature: o.temperature ?? 0.3, ...(c.reasoning ? { reasoning_effort: c.reasoning } : {}) }),
         });
         if (r.ok) { res = r; model = m; break; }
         r.body?.cancel().catch(() => {});
@@ -256,7 +258,8 @@ export async function* explainFact(uid: number, factId: string, fresh = false, s
 **Memory hook:** one short mnemonic or picture to remember it.
 **Related:** up to three ids of the other facts above worth revising with it, each in square brackets, or "none".` },
   ];
-  const r = yield* callModel({ kind: 'explain', userId: uid, session: `lightbox-u${uid}-explain`, messages, stream: true, maxTokens: 450, temperature: 0.2, fresh, signal });
+  // Thinking tokens share max_tokens on the Go gateway, so the ceilings leave room for the reasoning pass.
+  const r = yield* callModel({ kind: 'explain', userId: uid, session: `lightbox-u${uid}-explain`, messages, stream: true, maxTokens: 1400, temperature: 0.2, fresh, signal });
   return { cites: citeInfo(citeIds(r.text, [f.id, ...rel.map((x) => x.id)])), cached: r.cached, quota: r.quota };
 }
 
@@ -291,7 +294,7 @@ Plain text only, no headings or links.`;
 export async function* summariseDispute(uid: number, type: unknown, id: unknown, signal?: AbortSignal): AsyncGenerator<string, { cached: boolean; quota: Quota }> {
   const record = disputeRecord(type, id);
   if (!record) throw new AiError(404, 'That item has no recorded dispute.');
-  const r = yield* callModel({ kind: 'dispute', userId: uid, session: `lightbox-u${uid}-dispute`, stream: true, maxTokens: 400, temperature: 0.1, signal,
+  const r = yield* callModel({ kind: 'dispute', userId: uid, session: `lightbox-u${uid}-dispute`, stream: true, maxTokens: 1200, temperature: 0.1, signal,
     messages: [{ role: 'system', content: DISPUTE }, { role: 'user', content: `Record:\n${record}` }] });
   return { cached: r.cached, quota: r.quota };
 }
@@ -361,7 +364,7 @@ export async function* tutorReply(uid: number, chatId: number, input: { text?: u
     db.prepare('UPDATE ai_chats SET updated_at = ? WHERE id = ?').run(now(), chatId);
     return { id: Number(db.prepare("INSERT INTO ai_messages (chat_id, role, content, cites, created_at) VALUES (?, 'assistant', ?, ?, ?)").run(chatId, body, JSON.stringify(ids), now()).lastInsertRowid), cites: citeInfo(ids) };
   };
-  const it = callModel({ kind: 'tutor', userId: uid, session: `lightbox-u${uid}-c${chatId}`, messages, stream: true, maxTokens: 900, temperature: 0.3, signal });
+  const it = callModel({ kind: 'tutor', userId: uid, session: `lightbox-u${uid}-c${chatId}`, messages, stream: true, maxTokens: 2600, temperature: 0.3, signal });
   let answer = '', saved = false;
   try {
     let r = await it.next();
@@ -444,7 +447,7 @@ Reply with JSON only, no prose and no code fences, in this shape:
 {"mcqs":[{"stem":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"key":"B","explanation":"... [F-M-001]","fact_ids":["F-M-001"]}]}` },
   ];
   let answer = '';
-  for await (const d of callModel({ kind: 'generate', userId: uid, session: `lightbox-u${uid}-generate`, messages, stream: true, maxTokens: 400 + n * 450, temperature: 0.5, signal })) answer += d;
+  for await (const d of callModel({ kind: 'generate', userId: uid, session: `lightbox-u${uid}-generate`, messages, stream: true, maxTokens: 900 + n * 500, temperature: 0.5, signal })) answer += d;
   const { items, rejected } = parseMcqs(answer, new Set(src.map((f) => f.id)));
   const keep = items.slice(0, n);
   if (!keep.length) throw new AiError(502, 'The AI did not return usable questions. Try again.');
