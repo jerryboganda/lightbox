@@ -1,0 +1,43 @@
+---
+import App from '../layouts/App.astro';
+import TutorChat, { type ChatRow, type TopicRef } from '../components/islands/TutorChat';
+import { aiEnabled, chatMessages, chatTopic, getChat, listChats, quota, topicFacts } from '../server/ai';
+import { analytics } from '../server/analytics';
+import { intId } from '../server/personal';
+import { topicBySlug, topics, type Topic } from '../lib/data';
+
+const u = Astro.locals.user!;
+const ref = (t: Topic): TopicRef => ({ slug: t.slug, title: t.title, href: `/study/${t.system}/${t.slug}` });
+const chats: ChatRow[] = listChats(u.id).map((c) => { const t = chatTopic(c); return { id: c.id, title: c.title, topic: t ? ref(t) : null, updatedAt: c.updatedAt }; });
+const asked = intId(Astro.url.searchParams.get('c'));
+const active = asked && getChat(u.id, asked) ? asked : null;
+const topic = topicBySlug.get(Astro.url.searchParams.get('topic') ?? '');
+
+// Starters: the topic in context, else the student's weak topics, else the richest notes from different systems.
+const weak = analytics(u.id).weak.slice(0, 2);
+const rich: Topic[] = [];
+for (const t of [...topics].sort((a, b) => topicFacts(b).length - topicFacts(a).length)) if (rich.length < 4 && !rich.some((r) => r.system === t.system)) rich.push(t);
+const ASK = [(s: string) => `Key exam points on ${s}`, (s: string) => `Quiz me on ${s}`, (s: string) => `Common exam traps in ${s}`, (s: string) => `Explain ${s} simply`];
+const general = rich.map((t, i) => ASK[i](t.title));
+const starters = {
+  topic: topic ? [`Summarise ${topic.title} for the exam`, `Quiz me with three questions on ${topic.title}`, `What are the exam traps in ${topic.title}?`, `Which facts in ${topic.title} are unchecked or disputed?`] : [],
+  general: weak.length ? [...weak.flatMap((w) => [ASK[0](w.title), ASK[1](w.title)]), ...general].slice(0, 4) : general,
+  weak: weak.length > 0,
+};
+---
+<App title="Tutor">
+  <header class="reveal" style="--i:0">
+    <h1 class="text-2xl font-medium">Tutor</h1>
+    <p class="mt-1 max-w-3xl text-muted">Ask in your own words. Answers come only from Lightbox facts and cite each one, but the AI can still be wrong, so open the cited facts before you rely on them.</p>
+  </header>
+  <div class="reveal mt-4" style="--i:1">
+    <TutorChat client:load enabled={aiEnabled()} quota={quota(u.id)} chats={chats} active={active} messages={active ? chatMessages(u.id, active) ?? [] : []}
+      topic={topic ? ref(topic) : null} starters={starters} />
+  </div>
+</App>
+<style>
+  /* The composer sits on the page bottom, so the page needs no extra tail. */
+  :global(#main:has(.tc)) { padding-bottom: 0.5rem; }
+  @media (max-width: 767px) { :global(#main:has(.tc)) { padding-bottom: calc(4.4rem + env(safe-area-inset-bottom)); } }
+  @media (max-width: 767px) { header p { font-size: 0.875rem; } }
+</style>

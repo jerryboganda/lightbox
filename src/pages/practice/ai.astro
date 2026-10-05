@@ -1,0 +1,61 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import AiMcqPlayer from '../../components/islands/AiMcqPlayer';
+import { approvedMcqs, pendingCount } from '../../server/ai';
+import { SYSTEMS, systemOrder } from '../../lib/data';
+import '../../styles/practice.css';
+import '../../styles/ai.css';
+
+const items = approvedMcqs();
+const count = (s: string) => items.filter((q) => q.system === s).length;
+const systems = [...systemOrder, 'other'].filter((s) => count(s)).map((s) => [s, SYSTEMS[s].label, count(s)] as [string, string, number]);
+const pending = pendingCount(Astro.locals.user!.id);
+---
+<App title="AI practice set" crumbs={[{ label: 'Practice', href: '/practice' }]}>
+  <header class="reveal" style="--i:0">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <h1 class="text-2xl font-medium">AI practice set</h1>
+      <span class="ai-mark"><Icon name="Sparkles" size={12} />AI-generated · admin-approved</span>
+    </div>
+    <p class="mt-1 max-w-3xl text-muted">Extra single-best-answer questions written by AI from verified facts, each approved by an admin. They are not past-paper questions, so they stay out of the MCQ bank and your analytics.</p>
+  </header>
+
+  {items.length ? (
+    <div class="reveal mt-6" style="--i:1"><AiMcqPlayer client:load items={items} systems={systems} /></div>
+  ) : (
+    <section class="panel empty reveal mt-6" style="--i:1" aria-labelledby="h-empty">
+      <div class="empty-art" aria-hidden="true"><span></span><span></span><span><b>A</b><b>B</b><b class="on">C</b><b>D</b></span><i><Icon name="Sparkles" size={15} /></i></div>
+      <div class="min-w-0">
+        <h2 id="h-empty" class="text-lg font-medium">No approved AI questions yet</h2>
+        <p class="mt-1.5 max-w-[52ch] text-sm leading-relaxed text-muted">Open any topic note and choose <span class="text-ink">Generate MCQs</span>. The AI writes questions from that topic's verified facts; once an admin approves them they appear here for the whole class.</p>
+        <div class="mt-5 flex flex-wrap gap-2">
+          <a href="/study" class="btn btn-primary">Browse topics<Icon name="ArrowRight" size={16} /></a>
+          <a href="/practice/mcq" class="btn">Past-paper MCQs</a>
+        </div>
+      </div>
+    </section>
+  )}
+
+  {pending > 0 && (
+    <p class="reveal mx-auto mt-6 flex max-w-3xl items-center gap-2.5 rounded-xl border border-line bg-panel px-4 py-3 text-sm text-muted" style="--i:2">
+      <Icon name="Hourglass" size={16} class="shrink-0 text-signal" />
+      <span><span class="num text-ink">{pending}</span> of your generated question{pending === 1 ? ' is' : 's are'} waiting for admin review.</span>
+    </p>
+  )}
+</App>
+<style>
+  .empty { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2.25rem; padding: 2.25rem 2.5rem; }
+  .empty-art { position: relative; width: 10rem; height: 8.5rem; }
+  .empty-art > span { position: absolute; inset: 0.75rem 0.5rem; border-radius: 14px; border: 1px solid var(--line-strong); background: var(--raised); }
+  .empty-art > span:nth-child(1) { transform: rotate(-10deg) translate(-0.9rem, 0.3rem); opacity: 0.45; }
+  .empty-art > span:nth-child(2) { transform: rotate(-4deg) translate(-0.3rem, 0.1rem); opacity: 0.75; }
+  .empty-art > span:nth-child(3) { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; padding: 0.7rem; transform: rotate(3deg); border-color: color-mix(in oklab, var(--accent) 45%, transparent); animation: float 5s var(--ease) infinite alternate; }
+  .empty-art b { display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--line); font: 500 0.75rem var(--font-mono); color: var(--faint); }
+  .empty-art b.on { color: var(--accent); background: var(--glow); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .empty-art i { position: absolute; top: -0.1rem; right: -0.2rem; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 99px; color: var(--accent-ink); background: var(--accent); box-shadow: 0 0 0 4px var(--panel); }
+  @keyframes float { to { transform: rotate(5deg) translateY(calc(-4px * var(--move))); } }
+  @media (max-width: 640px) { .empty { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 1.75rem 1.25rem; justify-items: start; } .empty-art { width: 8.5rem; height: 7rem; } }
+  @media (prefers-reduced-motion: reduce) { .empty-art > span:nth-child(3) { animation: none; } }
+  :global([data-motion="reduced"]) .empty-art > span:nth-child(3) { animation: none; }
+</style>
