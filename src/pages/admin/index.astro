@@ -1,0 +1,176 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Overview from './_Overview.astro';
+import Audit from './_Audit.astro';
+import Announcements from './_Announcements.astro';
+import AiUsage from './_AiUsage.astro';
+import AdminUsers from '../../components/islands/admin/Users';
+import AdminReports from '../../components/islands/admin/Reports';
+import AdminComments from '../../components/islands/admin/Comments';
+import AdminPolls from '../../components/islands/admin/Polls';
+import AdminAiQueue from '../../components/islands/admin/AiQueue';
+import { now } from '../../server/db';
+import { AI_STATUS, aiCounts, COMMENT_FILTERS, commentCounts, isAdmin, listAiMcqs, listComments, listPolls, listReports, listUsers, navCounts, REPORT_KINDS, REPORT_STATUS, REPORT_TYPES, reportCounts } from '../../server/admin';
+import '../../styles/admin.css';
+
+const me = Astro.locals.user;
+if (!isAdmin(me)) return Astro.redirect('/');
+const p = Astro.url.searchParams;
+const TABS = [
+  ['overview', 'Overview', 'LayoutDashboard'],
+  ['users', 'Users', 'UsersRound'],
+  ['moderation', 'Moderation', 'ShieldAlert'],
+  ['polls', 'Polls', 'ChartBarBig'],
+  ['ai', 'AI review', 'Sparkles'],
+  ['announcements', 'Announcements', 'Megaphone'],
+  ['audit', 'Audit log', 'ScrollText'],
+] as const;
+const tab = TABS.find(([k]) => k === p.get('tab'))?.[0] ?? 'overview';
+const counts: Record<string, number> = navCounts();
+const ALERT = new Set(['moderation', 'ai']);
+const href = (k: string) => (k === 'overview' ? '/admin' : `/admin?tab=${k}`);
+const t = now();
+const BLURB: Record<string, string> = {
+  overview: 'How the class is doing, and what is waiting for you.',
+  users: 'Issue accounts, reset passwords, change roles and see who is studying.',
+  moderation: 'Act on reports against the content, and keep discussions useful and kind.',
+  polls: 'Ask the class a question and watch the answers come in.',
+  ai: 'Check AI-drafted questions against their facts before anyone practises them.',
+  announcements: 'Short notices on everyone’s dashboard, with an optional notification.',
+  audit: 'Every admin and moderation action, who did it and when.',
+};
+
+// Moderation
+const view = tab === 'moderation' && p.get('view') === 'comments' ? 'comments' : 'reports';
+const rStatus = REPORT_STATUS.find((s) => s === (p.get('status') ?? 'open')) ?? null;
+const rKind = REPORT_KINDS.find((k) => k === p.get('kind')) ?? null;
+const rType = REPORT_TYPES.find((k) => k === p.get('type')) ?? null;
+const cFilter = COMMENT_FILTERS.find((f) => f === p.get('filter')) ?? 'all';
+const KIND_LABEL: Record<string, string> = { wrong: 'Wrong', source: 'Source issue', typo: 'Typo', unclear: 'Unclear', duplicate: 'Duplicate', offensive: 'Offensive', other: 'Other' };
+const TYPE_LABEL: Record<string, string> = { fact: 'Facts', topic: 'Topics', mcq: 'MCQs', image: 'Images', comment: 'Comments' };
+const STATUS_LABEL: Record<string, string> = { open: 'Open', accepted: 'Accepted', rejected: 'Rejected', fixed: 'Fixed', all: 'All' };
+const rq = (status: string | null, kind = rKind, type = rType) => {
+  const q = new URLSearchParams({ tab: 'moderation' });
+  q.set('status', status ?? 'all');
+  if (kind) q.set('kind', kind);
+  if (type) q.set('type', type);
+  return `/admin?${q}`;
+};
+const rc = tab === 'moderation' ? reportCounts() : null;
+const cc = tab === 'moderation' ? commentCounts() : null;
+
+// AI review
+const aiStatus = AI_STATUS.find((s) => s === p.get('status')) ?? 'pending';
+const ac = tab === 'ai' ? aiCounts() : null;
+---
+<App title="Admin" wide>
+  <header class="reveal flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style="--i:0">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-medium">Admin</h1>
+      <p class="mt-1 text-muted">{BLURB[tab]}</p>
+    </div>
+  </header>
+
+  <nav class="adm-tabs reveal" style="--i:1" aria-label="Admin sections">
+    {TABS.map(([k, label, icon]) => (
+      <a href={href(k)} class:list={['at', { on: tab === k }]} aria-current={tab === k ? 'page' : undefined}>
+        {tab === k && <span class="at-ind" transition:name="adm-tab" />}
+        <Icon name={icon} size={16} /><span>{label}</span>
+        {k in counts && <span class:list={['num at-n', { hot: ALERT.has(k) && counts[k] > 0 }]} data-tab-count={k}>{counts[k]}</span>}
+      </a>
+    ))}
+  </nav>
+
+  <div class="mt-5" data-no-highlight>
+    {tab === 'overview' && <Overview />}
+
+    {tab === 'users' && <div class="reveal" style="--i:2"><AdminUsers client:idle users={listUsers()} meId={me.id} now={t} filter={p.get('filter') ?? undefined} /></div>}
+
+    {tab === 'moderation' && (
+      <section aria-label="Moderation">
+        <div class="mod-top reveal" style="--i:2">
+          <nav class="seg seg-links" aria-label="Moderation views">
+            <a href="/admin?tab=moderation" aria-current={view === 'reports' ? 'page' : undefined}><Icon name="Flag" size={15} />Reports<span class="num">{rc!.open}</span></a>
+            <a href="/admin?tab=moderation&view=comments" aria-current={view === 'comments' ? 'page' : undefined}><Icon name="MessagesSquare" size={15} />Comments<span class="num">{cc!.all}</span></a>
+          </nav>
+          <a href={view === 'reports' ? '/api/admin/export/reports.json' : '/api/admin/export/comments.json'} class="btn btn-sm btn-ghost" download><Icon name="Download" size={15} />Export {view} JSON</a>
+        </div>
+        {view === 'reports' ? (
+          <>
+            <div class="mod-filters reveal" style="--i:3">
+              <div class="flex flex-wrap gap-1.5" role="group" aria-label="Report status">
+                {[...REPORT_STATUS, null].map((s) => <a href={rq(s)} class:list={['chip', { on: rStatus === s }]} aria-current={rStatus === s ? 'true' : undefined}>{STATUS_LABEL[s ?? 'all']}<span class="num text-muted">{rc![s ?? 'all']}</span></a>)}
+              </div>
+              <form method="get" action="/admin" class="mod-sel">
+                <input type="hidden" name="tab" value="moderation" />
+                <input type="hidden" name="status" value={rStatus ?? 'all'} />
+                <label><span class="sr-only">Kind</span><select name="kind" class="field"><option value="">Any kind</option>{REPORT_KINDS.map((k) => <option value={k} selected={rKind === k}>{KIND_LABEL[k]}</option>)}</select></label>
+                <label><span class="sr-only">Item type</span><select name="type" class="field"><option value="">Any item</option>{REPORT_TYPES.map((k) => <option value={k} selected={rType === k}>{TYPE_LABEL[k]}</option>)}</select></label>
+                <button class="btn btn-sm">Filter</button>
+              </form>
+            </div>
+            <div class="reveal" style="--i:4"><AdminReports client:idle reports={listReports({ status: rStatus, kind: rKind, type: rType })} status={rStatus} now={t} me={me.username} /></div>
+          </>
+        ) : (
+          <>
+            <div class="mod-filters reveal" style="--i:3">
+              <div class="flex flex-wrap gap-1.5" role="group" aria-label="Comment state">
+                {COMMENT_FILTERS.map((f) => <a href={`/admin?tab=moderation&view=comments${f === 'all' ? '' : `&filter=${f}`}`} class:list={['chip', { on: cFilter === f }]} aria-current={cFilter === f ? 'true' : undefined}>{f[0].toUpperCase() + f.slice(1)}<span class="num text-muted">{cc![f]}</span></a>)}
+              </div>
+              <p class="text-xs text-faint">Newest first · up to 150</p>
+            </div>
+            <div class="reveal" style="--i:4"><AdminComments client:idle comments={listComments(cFilter)} filter={cFilter} now={t} me={me.username} /></div>
+          </>
+        )}
+      </section>
+    )}
+
+    {tab === 'polls' && <div class="reveal" style="--i:2"><AdminPolls client:idle polls={listPolls()} now={t} /></div>}
+
+    {tab === 'ai' && (
+      <section aria-label="AI review">
+        <div class="mod-filters reveal" style="--i:2">
+          <div class="flex flex-wrap gap-1.5" role="group" aria-label="Question status">
+            {AI_STATUS.map((s) => <a href={s === 'pending' ? '/admin?tab=ai' : `/admin?tab=ai&status=${s}`} class:list={['chip', { on: aiStatus === s }]} aria-current={aiStatus === s ? 'true' : undefined}>{s[0].toUpperCase() + s.slice(1)}<span class="num text-muted">{ac![s]}</span></a>)}
+          </div>
+          <a href="#usage" class="btn btn-sm btn-ghost"><Icon name="ChartColumn" size={15} />Usage</a>
+        </div>
+        <div class="reveal" style="--i:3"><AdminAiQueue client:idle items={listAiMcqs(aiStatus)} status={aiStatus} now={t} /></div>
+        <AiUsage />
+      </section>
+    )}
+
+    {tab === 'announcements' && <Announcements />}
+    {tab === 'audit' && <Audit params={p} />}
+  </div>
+</App>
+
+<script>
+  import '../../scripts/admin';
+</script>
+
+<style>
+  .adm-tabs { position: sticky; top: 3.75rem; z-index: 10; display: flex; gap: 2px; margin: 1.25rem -0.25rem 0; padding: 3px; overflow-x: auto; scrollbar-width: none; border-radius: 12px; background: color-mix(in oklab, var(--sunk) 88%, transparent); border: 1px solid var(--line); backdrop-filter: blur(12px); }
+  .adm-tabs::-webkit-scrollbar { display: none; }
+  .at { position: relative; isolation: isolate; display: inline-flex; flex: none; align-items: center; gap: 0.45rem; height: 2.25rem; padding: 0 0.8rem; border-radius: 9px; font-size: 0.8125rem; color: var(--muted); white-space: nowrap; transition: color var(--d1); }
+  .at:hover, .at.on { color: var(--ink); }
+  .at.on > :global(svg) { color: var(--accent); }
+  .at-ind { position: absolute; z-index: -1; inset: 0; border-radius: 9px; background: var(--raised); box-shadow: 0 1px 0 var(--line-strong), 0 2px 10px -4px rgb(0 0 0 / 0.45); }
+  .at-n { min-width: 1.35rem; padding: 0 0.3rem; border-radius: 6px; font-size: 0.6875rem; line-height: 1.25rem; text-align: center; color: var(--muted); background: color-mix(in oklab, var(--ink) 7%, transparent); }
+  .at.on .at-n { color: color-mix(in oklab, var(--accent) 75%, var(--ink)); background: var(--glow); }
+  .at-n.hot { color: color-mix(in oklab, var(--signal) 80%, var(--ink)); background: color-mix(in oklab, var(--signal) 16%, transparent); }
+  ::view-transition-group(adm-tab) { animation-duration: var(--d3); animation-timing-function: var(--ease); }
+  .mod-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .seg-links a { display: inline-flex; align-items: center; gap: 0.45rem; height: 1.9rem; padding: 0 0.8rem; border-radius: 8px; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1), background-color var(--d2) var(--ease); }
+  .seg-links a:hover { color: var(--ink); }
+  .seg-links a[aria-current="page"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 0 var(--line-strong), 0 2px 8px -4px rgb(0 0 0 / 0.4); }
+  .seg-links a span { font-size: 0.6875rem; color: var(--faint); }
+  .mod-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin: 1rem 0; }
+  .mod-sel { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .mod-sel .field { height: 2.1rem; width: auto; min-width: 9.5rem; padding-right: 2rem; font-size: 0.8125rem; }
+  @media (max-width: 767px) {
+    .adm-tabs { top: 3.4rem; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); }
+    .mod-sel { width: 100%; } .mod-sel label { flex: 1; } .mod-sel .field { width: 100%; min-width: 0; }
+  }
+</style>

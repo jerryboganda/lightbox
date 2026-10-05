@@ -1,0 +1,100 @@
+---
+import Icon from '../../components/Icon.astro';
+import { AREA_LABELS, AUDIT_PAGE, auditPage } from '../../server/admin';
+import { ago, dayKey } from '../../server/personal';
+
+interface Props { params: URLSearchParams }
+const p = Astro.props.params;
+const a = auditPage({ actor: p.get('actor'), action: p.get('action'), q: p.get('q'), page: p.get('page') });
+const filtered = !!(a.actor || a.prefix || a.search);
+const link = (page: number) => {
+  const q = new URLSearchParams({ tab: 'audit' });
+  if (a.actor) q.set('actor', String(a.actor));
+  if (a.prefix) q.set('action', a.prefix);
+  if (a.search) q.set('q', a.search);
+  if (page > 1) q.set('page', String(page));
+  return `/admin?${q}`;
+};
+const AREA_ICON: Record<string, string> = { user: 'UserRound', login: 'LogIn', password: 'KeyRound', announce: 'Megaphone', announcement: 'Megaphone', report: 'Flag', comment: 'MessageSquare', poll: 'ChartBarBig', aimcq: 'Sparkles' };
+const TZ = 5 * 3_600_000;
+const today = dayKey(Date.now()), yesterday = dayKey(Date.now() - 86_400_000);
+const dayLabel = (d: string) => d === today ? 'Today' : d === yesterday ? 'Yesterday' : new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+const hhmm = (t: number) => new Date(t + TZ).toISOString().slice(11, 16);
+const abs = (t: number) => new Date(t).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'medium', timeZone: 'Asia/Karachi' }) + ' PKT';
+const groups: { day: string; rows: typeof a.rows }[] = [];
+for (const r of a.rows) { const d = dayKey(r.at); if (groups.at(-1)?.day !== d) groups.push({ day: d, rows: [] }); groups.at(-1)!.rows.push(r); }
+const from = a.total ? (a.page - 1) * AUDIT_PAGE + 1 : 0, to = Math.min(a.page * AUDIT_PAGE, a.total);
+---
+<section aria-label="Audit log">
+  <form method="get" action="/admin" class="panel afilt reveal" style="--i:2" role="search" aria-label="Filter the audit log">
+    <input type="hidden" name="tab" value="audit" />
+    <label class="afilt-f"><span>Who</span>
+      <select name="actor" class="field"><option value="">Everyone</option>{a.actors.map((u) => <option value={u.id} selected={a.actor === u.id}>@{u.username}</option>)}</select>
+    </label>
+    <label class="afilt-f"><span>What</span>
+      <select name="action" class="field"><option value="">All actions</option>{a.areas.map((x) => <option value={x} selected={a.prefix === x}>{AREA_LABELS[x] ?? x}</option>)}</select>
+    </label>
+    <label class="afilt-f grow"><span>Target contains</span>
+      <input type="search" name="q" class="field" value={a.search} maxlength="100" placeholder="username, #id, poll question…" autocomplete="off" />
+    </label>
+    <div class="afilt-b">
+      <button class="btn btn-primary"><Icon name="ListFilter" size={16} />Apply</button>
+      {filtered && <a href="/admin?tab=audit" class="btn btn-ghost">Clear</a>}
+    </div>
+  </form>
+
+  <p class="reveal mt-4 text-sm text-muted" style="--i:3" aria-live="polite">
+    {a.total ? <>Showing <span class="num text-ink">{from}–{to}</span> of <span class="num text-ink">{a.total.toLocaleString('en-GB')}</span> {filtered ? 'matching entries' : 'entries'}</> : filtered ? 'No entries match these filters.' : 'No entries yet.'}
+  </p>
+
+  {groups.length > 0 && (
+    <ol class="aday-list">
+      {groups.map((g, gi) => (
+        <li class="reveal" style={`--i:${Math.min(gi + 4, 10)}`}>
+          <h2 class="aday">{dayLabel(g.day)}<span class="num text-faint">{g.rows.length}</span></h2>
+          <ol class="panel arows">
+            {g.rows.map((r) => (
+              <li class="arow">
+                <span class={`arow-ic a-${r.area}`}><Icon name={AREA_ICON[r.area] ?? 'Dot'} size={15} /></span>
+                <p class="arow-t">
+                  {r.username ? <a href={`/admin?tab=audit&actor=${r.actorId}`} class="font-medium text-ink hover:text-accent" title={`Only @${r.username}`}>@{r.username}</a> : <span class="font-medium text-ink">system</span>}
+                  {' '}<span class="text-muted">{r.label}</span>
+                  {r.target && <> <code class="arow-tg">{r.target}</code></>}
+                </p>
+                <time class="arow-time" datetime={new Date(r.at).toISOString()} title={abs(r.at)}><span class="num">{hhmm(r.at)}</span><span class="text-faint">{ago(r.at)}</span></time>
+              </li>
+            ))}
+          </ol>
+        </li>
+      ))}
+    </ol>
+  )}
+
+  {a.pages > 1 && (
+    <nav class="apager" aria-label="Audit log pages">
+      {a.page > 1 ? <a href={link(a.page - 1)} class="btn btn-sm" rel="prev"><Icon name="ChevronLeft" size={15} />Newer</a> : <span class="btn btn-sm pointer-events-none border-line text-faint" aria-disabled="true"><Icon name="ChevronLeft" size={15} />Newer</span>}
+      <span class="num text-sm text-muted">Page {a.page} of {a.pages}</span>
+      {a.page < a.pages ? <a href={link(a.page + 1)} class="btn btn-sm" rel="next">Older<Icon name="ChevronRight" size={15} /></a> : <span class="btn btn-sm pointer-events-none border-line text-faint" aria-disabled="true">Older<Icon name="ChevronRight" size={15} /></span>}
+    </nav>
+  )}
+</section>
+
+<style>
+  .afilt { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 1rem 1.1rem; }
+  .afilt-f { display: grid; gap: 0.3rem; min-width: 10rem; font-size: 0.75rem; font-weight: 500; color: var(--muted); }
+  .afilt-f.grow { flex: 1; min-width: 14rem; }
+  .afilt-b { display: flex; gap: 0.5rem; }
+  .aday-list { display: grid; gap: 1.4rem; margin-top: 1rem; }
+  .aday { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.8125rem; font-weight: 500; color: var(--muted); }
+  .arows { overflow: hidden; }
+  .arow { display: flex; align-items: center; gap: 0.8rem; padding: 0.65rem 1rem; border-top: 1px solid var(--line); }
+  .arow:first-child { border-top: 0; }
+  .arow-ic { display: grid; place-items: center; width: 1.85rem; height: 1.85rem; flex: none; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--sunk); color: var(--muted); --c: var(--muted); }
+  .a-user { --c: var(--accent); } .a-report { --c: var(--signal); } .a-comment { --c: var(--edition); } .a-poll { --c: var(--accent); } .a-aimcq { --c: var(--edition); } .a-announcement, .a-announce { --c: var(--signal); } .a-login, .a-password { --c: var(--faint); }
+  .arow-ic { color: color-mix(in oklab, var(--c) 80%, var(--ink)); background: color-mix(in oklab, var(--c) 10%, var(--sunk)); border-color: color-mix(in oklab, var(--c) 30%, var(--line)); }
+  .arow-t { min-width: 0; flex: 1; font-size: 0.875rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .arow-tg { font-family: var(--font-mono); font-size: 0.75rem; padding: 0.05rem 0.35rem; border-radius: 5px; background: var(--sunk); color: var(--ink); border: 1px solid var(--line); }
+  .arow-time { display: grid; justify-items: end; flex: none; font-size: 0.75rem; color: var(--muted); line-height: 1.35; }
+  .apager { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.25rem; }
+  @media (max-width: 640px) { .afilt-f { flex: 1 1 calc(50% - 0.75rem); min-width: 0; } .afilt-f.grow { flex-basis: 100%; } .afilt-b { width: 100%; } .afilt-b .btn { flex: 1; justify-content: center; } .arow { align-items: flex-start; padding: 0.65rem 0.8rem; } }
+</style>

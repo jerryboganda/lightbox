@@ -1,0 +1,176 @@
+---
+import Icon from '../../components/Icon.astro';
+import ChartCard from '../../components/charts/ChartCard.astro';
+import { overview, recentAudit } from '../../server/admin';
+import { ago } from '../../server/personal';
+
+const { kpi, days } = overview();
+const log = recentAudit(6);
+const pct = (a: number, b: number) => (b ? Math.min(1, a / b) : 0);
+const fmt = (n: number) => n.toLocaleString('en-GB');
+const tiles = [
+  { href: '/admin?tab=users', icon: 'UsersRound', label: 'Members', n: kpi.members, sub: kpi.awaiting ? `${kpi.awaiting} yet to sign in` : 'Everyone has signed in', tone: 'accent', meter: null },
+  { href: '/admin?tab=users&filter=active', icon: 'Activity', label: 'Active today', n: kpi.activeToday, sub: `${kpi.active7} this week`, tone: 'accent', meter: pct(kpi.activeToday, kpi.members) },
+  { href: '/admin?tab=moderation', icon: 'Flag', label: 'Open reports', n: kpi.openReports, sub: kpi.openReports ? 'Waiting for a decision' : 'Queue is clear', tone: kpi.openReports ? 'signal' : 'ok', meter: null },
+  { href: '/admin?tab=moderation&view=comments&filter=hidden', icon: 'EyeOff', label: 'Hidden comments', n: kpi.hiddenComments, sub: `${kpi.comments7} new this week`, tone: 'muted', meter: null },
+  { href: '/admin?tab=ai', icon: 'Sparkles', label: 'AI drafts to review', n: kpi.pendingAi, sub: kpi.pendingAi ? 'Unverified until approved' : 'Nothing pending', tone: kpi.pendingAi ? 'signal' : 'ok', meter: null },
+  { href: '/admin?tab=ai#usage', icon: 'Cpu', label: 'AI requests today', n: kpi.aiToday, sub: 'Explain, tutor and generate', tone: 'edition', meter: null },
+];
+
+// 14-day class activity, stacked: reviews, answers, comments.
+const SEGS = [['reviews', 'var(--accent)', 'Card reviews'], ['answers', 'var(--signal)', 'MCQ answers'], ['comments', 'var(--edition)', 'Comments']] as const;
+const total = (d: (typeof days)[number]) => d.reviews + d.answers + d.comments;
+const sum = days.reduce((s, d) => s + total(d), 0);
+const empty = sum === 0;
+const shown = empty ? days.map((d, i) => ({ ...d, reviews: 8 + ((i * 7) % 11) * 3, answers: 4 + ((i * 5) % 7) * 2, comments: (i * 3) % 4 })) : days;
+const max = Math.max(1, ...shown.map(total));
+const top = (() => { const e = 10 ** Math.floor(Math.log10(max)); return [1, 2, 2.5, 5, 10].map((m) => m * e).find((v) => v >= max)!; })();
+const long = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const tip = (d: (typeof days)[number]) => `${long(d.day)}: ${total(d) ? `${d.reviews} reviews, ${d.answers} answers, ${d.comments} comments` : 'no activity'}`;
+const totals = SEGS.map(([k]) => days.reduce((s, d) => s + d[k], 0));
+const busiest = [...days].sort((a, b) => total(b) - total(a))[0];
+const take = empty ? 'Reviews, MCQ answers and comments from the whole class, day by day.'
+  : `${fmt(totals[0])} reviews, ${fmt(totals[1])} answers and ${fmt(totals[2])} comments in 14 days. Busiest: ${long(busiest.day)}.`;
+
+const queues = [
+  { href: '/admin?tab=moderation', icon: 'Flag', label: 'Open reports', n: kpi.openReports },
+  { href: '/admin?tab=ai', icon: 'Sparkles', label: 'AI drafts to review', n: kpi.pendingAi },
+  { href: '/admin?tab=moderation&view=comments&filter=hidden', icon: 'EyeOff', label: 'Hidden comments', n: kpi.hiddenComments },
+  { href: '/admin?tab=users&filter=awaiting', icon: 'UserRoundPlus', label: 'Yet to sign in', n: kpi.awaiting },
+  { href: '/admin?tab=polls', icon: 'ChartBarBig', label: 'Open polls', n: kpi.openPolls },
+];
+const waiting = kpi.openReports + kpi.pendingAi;
+const AREA_ICON: Record<string, string> = { user: 'UserRound', login: 'LogIn', password: 'KeyRound', announce: 'Megaphone', announcement: 'Megaphone', report: 'Flag', comment: 'MessageSquare', poll: 'ChartBarBig', aimcq: 'Sparkles' };
+---
+<div class="ov">
+  <ul class="kpis" aria-label="Key numbers" data-kpis>
+    {tiles.map((k, i) => (
+      <li class="reveal" style={`--i:${i + 2}`}>
+        <a href={k.href} class={`panel kpi lift press t-${k.tone}`}>
+          <span class="kpi-ic"><Icon name={k.icon} size={17} /></span>
+          <span class="kpi-n num" data-count={k.n}>{k.n}</span>
+          <span class="kpi-l">{k.label}</span>
+          <span class="kpi-s">{k.sub}</span>
+          {k.meter !== null && <span class="kpi-m" aria-hidden="true"><span style={`--w:${k.meter}`}></span></span>}
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  <div class="ov-grid">
+    <ChartCard id="class-activity" title="Class activity" takeaway={take} class="ov-chart" i={8}
+      empty={empty ? { text: 'No class activity in the last 14 days yet.', icon: 'Activity', cta: 'Add classmates', href: '/admin?tab=users' } : null}>
+      <div class="pl-wrap" aria-hidden={empty ? 'true' : undefined}>
+        <div class="pl" style="--n:14">
+          <div class="pl-grid" aria-hidden="true">{[1, 0.5, 0].map((v) => <span style={`top:${(1 - v) * 100}%`}><em>{fmt(Math.round(top * v))}</em></span>)}</div>
+          <div class="pl-cols" aria-hidden="true">
+            {shown.map((d, i) => (
+              <span><i class="pl-bar ov-bar" style={`height:${(total(d) / top) * 100}%;--i:${i}`}>{SEGS.map(([k, c]) => d[k] > 0 && <b style={`flex:${d[k]};background:${c}`}></b>)}</i></span>
+            ))}
+          </div>
+          {!empty && (
+            <div class="pl-hits" role="group" aria-label="Class activity per day. Arrow keys move between days." data-rove>
+              {days.map((d, i) => <span role="img" aria-label={tip(d)} data-tip={tip(d)} tabindex={i === days.length - 1 ? 0 : -1}></span>)}
+            </div>
+          )}
+        </div>
+        <div class="pl-x" style="--n:14" data-thin aria-hidden="true">{days.map((d, i) => <span data-now={i === days.length - 1 ? '' : undefined}>{Number(d.day.slice(8))}</span>)}</div>
+      </div>
+      <div slot="foot" class="ch-foot">
+        <span class="flex flex-wrap gap-x-4 gap-y-1">{SEGS.map(([, c, label], i) => <span class="ch-key"><i style={`--c:${c}`}></i>{label} <b class="num font-medium text-ink">{fmt(totals[i])}</b></span>)}</span>
+      </div>
+      <table slot="table"><caption>Class activity, last 14 days</caption><thead><tr><th>Day</th><th>Reviews</th><th>Answers</th><th>Comments</th></tr></thead>
+        <tbody>{days.map((d) => <tr><td>{long(d.day)}</td><td>{d.reviews}</td><td>{d.answers}</td><td>{d.comments}</td></tr>)}</tbody></table>
+    </ChartCard>
+
+    <section class="panel ov-q reveal" style="--i:9" aria-labelledby="q-h">
+      <header class="flex items-center justify-between gap-3">
+        <h2 id="q-h" class="ov-h">Needs you</h2>
+        {waiting ? <span class="badge s-unchecked">{waiting} waiting</span> : <span class="badge s-cited">All clear</span>}
+      </header>
+      <ul class="mt-3 space-y-1">
+        {queues.map((q) => (
+          <li>
+            <a href={q.href} class:list={['qrow', { zero: !q.n }]}>
+              <span class="qrow-ic"><Icon name={q.icon} size={16} /></span>
+              <span class="min-w-0 flex-1 truncate">{q.label}</span>
+              {q.n ? <span class="num qrow-n">{q.n}</span> : <Icon name="Check" size={15} class="text-ok" />}
+              <Icon name="ChevronRight" size={15} class="text-faint" />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="panel ov-log reveal" style="--i:10" aria-labelledby="log-h">
+      <header class="flex items-center justify-between gap-3">
+        <h2 id="log-h" class="ov-h">Recent admin activity</h2>
+        <a href="/admin?tab=audit" class="ov-link">Audit log<Icon name="ArrowRight" size={14} /></a>
+      </header>
+      {log.length ? (
+        <ol class="mt-3 space-y-0.5">
+          {log.map((l) => (
+            <li class="lrow">
+              <span class="lrow-ic"><Icon name={AREA_ICON[l.area] ?? 'Dot'} size={14} /></span>
+              <p class="min-w-0 flex-1 truncate text-sm"><span class="text-ink">@{l.username ?? 'system'}</span> <span class="text-muted">{l.label}</span> {l.target && <span class="num text-xs text-faint">{l.target}</span>}</p>
+              <time class="num shrink-0 text-xs text-faint" datetime={new Date(l.at).toISOString()}>{ago(l.at)}</time>
+            </li>
+          ))}
+        </ol>
+      ) : <p class="mt-3 text-sm text-muted">Nothing yet. Actions you take here are recorded.</p>}
+    </section>
+
+    <section class="panel ov-ex reveal" style="--i:11" aria-labelledby="ex-h">
+      <h2 id="ex-h" class="ov-h">Exports</h2>
+      <p class="mt-0.5 text-xs text-muted">Downloads for the content pipeline and your records.</p>
+      <ul class="mt-3 grid gap-2">
+        <li><a href="/api/admin/export/reports.json" download class="exrow"><span class="exrow-ic"><Icon name="FileBraces" size={17} /></span><span class="min-w-0 flex-1"><span class="block text-sm font-medium">Reports</span><span class="block truncate text-xs text-muted">Every report with a snapshot of its fact, MCQ or topic</span></span><Icon name="Download" size={16} class="text-faint" /></a></li>
+        <li><a href="/api/admin/export/comments.json" download class="exrow"><span class="exrow-ic"><Icon name="MessagesSquare" size={17} /></span><span class="min-w-0 flex-1"><span class="block text-sm font-medium">Comments</span><span class="block truncate text-xs text-muted">All threads, including hidden ones</span></span><Icon name="Download" size={16} class="text-faint" /></a></li>
+        <li><a href="/api/admin/export/users.csv" download class="exrow"><span class="exrow-ic"><Icon name="Sheet" size={17} /></span><span class="min-w-0 flex-1"><span class="block text-sm font-medium">Accounts</span><span class="block truncate text-xs text-muted">Usernames, roles and last seen, as CSV</span></span><Icon name="Download" size={16} class="text-faint" /></a></li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<style>
+  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.75rem; }
+  .kpi { position: relative; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "n ic" "l l" "s s"; align-items: start; height: 100%; padding: 1rem 1.05rem 1.05rem; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--tc) 12%, transparent), transparent 60%); opacity: 0.9; pointer-events: none; }
+  .t-accent { --tc: var(--accent); } .t-signal { --tc: var(--signal); } .t-ok { --tc: var(--ok); } .t-muted { --tc: var(--muted); } .t-edition { --tc: var(--edition); }
+  .kpi-ic { grid-area: ic; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 10px; color: color-mix(in oklab, var(--tc) 85%, var(--ink)); background: color-mix(in oklab, var(--tc) 13%, transparent); border: 1px solid color-mix(in oklab, var(--tc) 28%, transparent); }
+  .kpi-n { grid-area: n; font-size: 1.85rem; line-height: 1.1; font-weight: 500; letter-spacing: -0.03em; }
+  .t-signal .kpi-n { color: color-mix(in oklab, var(--signal) 80%, var(--ink)); }
+  .kpi-l { grid-area: l; margin-top: 0.35rem; font-size: 0.8125rem; font-weight: 500; }
+  .kpi-s { grid-area: s; font-size: 0.75rem; color: var(--muted); }
+  .kpi-m { position: absolute; left: 1.05rem; right: 1.05rem; bottom: 0.55rem; height: 3px; border-radius: 99px; background: var(--sunk); overflow: hidden; }
+  .kpi-m span { position: absolute; inset: 0; border-radius: 99px; background: var(--accent); transform-origin: left; transform: scaleX(var(--w)); animation: kgrow calc(0.9s * var(--move)) var(--ease) both 0.35s; }
+  @keyframes kgrow { from { transform: scaleX(0); } }
+  .ov-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+  .ov-grid > :global(.ov-chart) { grid-column: span 8; }
+  .ov-q { grid-column: span 4; padding: 1.2rem 1.25rem; }
+  .ov-log { grid-column: span 7; padding: 1.2rem 1.25rem; }
+  .ov-ex { grid-column: span 5; padding: 1.2rem 1.25rem; }
+  .ov-h { font-size: 0.95rem; font-weight: 500; }
+  .ov-link { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; color: var(--muted); transition: color var(--d1); }
+  .ov-link:hover { color: var(--accent); }
+  .ov-bar { display: flex; flex-direction: column-reverse; gap: 2px; overflow: hidden; }
+  .ov-bar b { min-height: 2px; }
+  .qrow { display: flex; align-items: center; gap: 0.7rem; padding: 0.55rem 0.5rem; border-radius: 10px; font-size: 0.875rem; transition: background-color var(--d1); }
+  .qrow:hover { background: color-mix(in oklab, var(--ink) 5%, transparent); }
+  .qrow-ic { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; flex: none; border-radius: 9px; background: var(--sunk); color: var(--muted); border: 1px solid var(--line); }
+  .qrow:not(.zero) .qrow-ic { color: var(--signal); background: color-mix(in oklab, var(--signal) 10%, transparent); border-color: color-mix(in oklab, var(--signal) 30%, transparent); }
+  .qrow.zero { color: var(--muted); }
+  .qrow-n { min-width: 1.6rem; padding: 0.1rem 0.4rem; border-radius: 7px; text-align: center; font-size: 0.75rem; color: color-mix(in oklab, var(--signal) 80%, var(--ink)); background: color-mix(in oklab, var(--signal) 14%, transparent); }
+  .lrow { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0; border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent); }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow-ic { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; flex: none; border-radius: 99px; background: var(--sunk); color: var(--muted); border: 1px solid var(--line); }
+  .ov-ex li { min-width: 0; }
+  .exrow { display: flex; align-items: center; gap: 0.8rem; padding: 0.7rem 0.8rem; border-radius: 11px; border: 1px solid var(--line); background: color-mix(in oklab, var(--sunk) 50%, transparent); transition: border-color var(--d1), background-color var(--d1), transform var(--d2) var(--ease); }
+  .exrow:hover { border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); background: var(--glow); }
+  .exrow:active { transform: scale(calc(1 - 0.015 * var(--move))); }
+  .exrow-ic { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; flex: none; border-radius: 10px; color: var(--accent); background: var(--glow); }
+  @media (max-width: 1279px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 1100px) { .ov-grid > :global(.ov-chart), .ov-q, .ov-log, .ov-ex { grid-column: span 12; } }
+  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; } .kpi { padding: 0.85rem 0.9rem 0.95rem; } .kpi-n { font-size: 1.55rem; } .kpi-ic { width: 1.75rem; height: 1.75rem; } }
+  @media (prefers-reduced-motion: reduce) { .kpi-m span { animation: none; } }
+</style>
