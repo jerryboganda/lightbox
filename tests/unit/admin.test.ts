@@ -35,8 +35,9 @@ describe('accounts', () => {
     expect(audits('user.role').at(-1)?.target).toBe('new.admin:admin');
     db.prepare("UPDATE users SET role = 'member' WHERE username = 'new.admin'").run(); // boss stays the only admin below
     const [a, b] = await Promise.all([addUser(me().id, { username: 'twice' }), addUser(me().id, { username: 'twice' })]);
-    expect(a).toHaveProperty('password');
-    expect(b).toMatchObject({ error: '@twice already exists.' });
+    const [created, rejected] = 'password' in a ? [a, b] : [b, a]; // either submit can win the race
+    expect(created).toHaveProperty('password');
+    expect(rejected).toMatchObject({ error: '@twice already exists.' });
   });
 
   it('bulk-creates only when every line passes, and audits each account', async () => {
