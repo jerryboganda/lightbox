@@ -110,6 +110,7 @@ export default function Thread({ itemType, itemId, title = 'Discussion', compact
     const temp: C = { id: -Date.now(), k: `t${Date.now()}`, parentId, author: { id: 0, name: me?.name ?? 'You', admin: !!me?.admin }, body, createdAt: Date.now(), editedAt: null,
       deleted: false, hidden: false, votes: 0, mine: false, own: true, pending: true };
     if (!parentId) mineNew.current.add(temp.id);
+    else setMore((s) => new Set(s).add(parentId)); // a new reply lands last: keep it out from behind "Show more"
     setList((l) => [...(l ?? []), temp]);
     try {
       const { comment } = await send<{ comment: C }>('/api/comments', 'POST', { type: itemType, id: itemId, body, parentId });

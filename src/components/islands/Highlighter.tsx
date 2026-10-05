@@ -125,7 +125,7 @@ function capture(): Sel | null {
 function reportable(s: Sel): ReportTarget | null {
   const [, a, b, c] = location.pathname.split('/');
   const id = s.factId ?? (a === 'facts' && b && !c ? decodeURIComponent(b) : null);
-  return id ? { itemType: 'fact', itemId: id } : a === 'study' && c ? { itemType: 'topic', itemId: decodeURIComponent(c) } : null;
+  return id ? { itemType: 'fact', itemId: id } : a === 'study' && c && c !== 'print' ? { itemType: 'topic', itemId: decodeURIComponent(c) } : null;
 }
 
 // Open the Ctrl K palette with the selection typed in.

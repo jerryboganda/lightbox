@@ -44,7 +44,7 @@ const RULES = [
       <h1 class="text-2xl font-medium">Class</h1>
       <p class="mt-1 max-w-2xl text-muted">How the class is studying, what it's discussing and where it disagrees.</p>
     </div>
-    {mine && (
+    {mine && mine.points > 0 && (
       <a href="#board" class="you-chip" aria-label={`You are number ${mine.rank} this week with ${mine.points} points`}>
         <span class="you-rank num">#{mine.rank}</span><span class="text-muted">this week</span><span class="num text-ink">{mine.points}</span><span class="text-muted">pts</span>
       </a>

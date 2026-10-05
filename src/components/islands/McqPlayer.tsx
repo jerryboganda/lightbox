@@ -71,7 +71,7 @@ export default function McqPlayer() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!m || /input|select|textarea/i.test((e.target as HTMLElement).tagName) || (e.target as HTMLElement).closest?.('[data-thread], dialog') || e.metaKey || e.ctrlKey) return;
+      if (!m || /input|select|textarea/i.test((e.target as HTMLElement).tagName) || (e.target as HTMLElement).closest?.('[data-thread], dialog, [popover]') || e.metaKey || e.ctrlKey) return;
       const letters = Object.keys(m.options);
       const k = e.key.toUpperCase();
       const idx = /^[1-9]$/.test(k) ? Number(k) - 1 : letters.indexOf(k);
