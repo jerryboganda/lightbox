@@ -119,10 +119,13 @@ test('system print page lists every topic and waits for the button', async ({ pa
   expect(await page.evaluate(() => (window as any).printed)).toBe(1);
 });
 
-test('print buttons fire once after client-side navigation', async ({ page }) => {
+test('print buttons fire once after client-side navigation', async ({ page, isMobile }) => {
   await page.addInitScript(() => { (window as any).printed = 0; window.print = () => { (window as any).printed++; }; });
   await page.goto('/study/physics/bremsstrahlung');
-  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Physics and safety' }).click();
+  if (isMobile) { // phones hide parent crumbs; go through the Study tab instead
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Study' }).click();
+    await page.getByRole('link', { name: /Physics and safety/ }).first().click();
+  } else await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Physics and safety' }).click();
   await page.getByRole('link', { name: 'Print all' }).click();
   await expect(page).toHaveURL(/\/study\/physics\/print$/);
   await page.getByRole('button', { name: /Print or save as PDF/ }).click();
