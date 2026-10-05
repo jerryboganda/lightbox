@@ -82,7 +82,9 @@ export function postComment(u: Actor, b: Record<string, unknown>): { comment: Co
   const body = cleanBody(b.body);
   if (!body) return fail(`Write something, up to ${LIMITS.body} characters.`);
   const parent = b.parentId == null ? undefined : raw(intId(b.parentId));
-  if (b.parentId != null && (!parent || parent.item_type !== it.type || parent.item_id !== it.id || parent.deleted)) return fail('That comment is no longer there.', 404);
+  // A moderator-hidden comment takes no new replies, directly or through one of its replies.
+  const hidden = !!parent?.hidden || (!!parent?.parent_id && !!raw(parent.parent_id)?.hidden);
+  if (b.parentId != null && (!parent || parent.item_type !== it.type || parent.item_id !== it.id || parent.deleted || hidden)) return fail('That comment is no longer there.', 404);
   // ponytail: admins are trusted and skip the rate limit (they moderate and test); add a role check here if that changes.
   if (u.role !== 'admin' && (db.prepare('SELECT COUNT(*) n FROM comments WHERE user_id = ? AND created_at > ?').get(u.id, now() - LIMITS.commentWindow) as { n: number }).n >= LIMITS.comments)
     return fail("You're posting quickly. Wait a few minutes, then try again.", 429);

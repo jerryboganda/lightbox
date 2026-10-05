@@ -179,7 +179,7 @@ const RULES = [
         </header>
         {polls.length ? (
           <div class="mt-3 grid gap-3">
-            {polls.map((p) => (p.item_type === 'mcq' ? <Poll client:visible mcqQid={p.item_id!} /> : <Poll client:visible pollId={p.id} />))}
+            {polls.map((p) => <div id={`poll-${p.id}`} class="scroll-mt-24">{p.item_type === 'mcq' ? <Poll client:visible mcqQid={p.item_id!} /> : <Poll client:visible pollId={p.id} />}</div>)}
           </div>
         ) : (
           <div class="empty">
