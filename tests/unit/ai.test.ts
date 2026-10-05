@@ -135,6 +135,23 @@ describe('gateway', () => {
     await expect(Promise.all([p2, p4])).resolves.toHaveLength(2);
     expect(quota(ids['ai-m3']).used).toBe(0);
   });
+
+  it('neither sends nor counts a request whose student left while it was queued', async () => {
+    AI.queueMs = 2_000;
+    const gates: (() => void)[] = [];
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => (init.signal?.aborted ? Promise.reject(init.signal.reason) : new Promise((res) => gates.push(() => res(json('done'))))));
+    const p1 = run(call(ids['ai-m1'])), p2 = run(call(ids['ai-m2']));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const ac = new AbortController();
+    const p3 = run(call(ids['ai-m3'], { signal: ac.signal })); // queued behind the two in flight
+    ac.abort();
+    gates[0]();
+    await expect(p3).rejects.toThrow(/abort/i);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(quota(ids['ai-m3']).used).toBe(0);
+    gates[1]();
+    await Promise.all([p1, p2]);
+  });
 });
 
 describe('grounding and citations', () => {
@@ -215,6 +232,17 @@ describe('tutor chats', () => {
 
     await expect(run(tutorReply(ids['ai-m1'], id, { text: 'hi' }))).rejects.toMatchObject({ status: 404 });
     await expect(run(tutorReply(u, id, { text: 'x'.repeat(2001) }))).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('keeps the old answer when a retry cannot run', async () => {
+    vi.stubEnv('AI_DAILY_CAP', '1');
+    const u = ids['ai-m1'];
+    const { id } = createChat(u, 'Retry at the cap', null) as { id: number };
+    fetchMock.mockImplementation(async () => deltas('First answer.'));
+    await run(tutorReply(u, id, { text: 'What is a rectocele?' }));
+    await expect(run(tutorReply(u, id, { retry: true }))).rejects.toMatchObject({ status: 429 });
+    expect(chatMessages(u, id)!.map((m) => m.content)).toEqual(['What is a rectocele?', 'First answer.']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a stopped answer and frees the slot', async () => {

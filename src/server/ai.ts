@@ -110,6 +110,7 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
   try {
     await acquire();
     held = true;
+    o.signal?.throwIfAborted(); // the student left while queued: nothing is sent, so nothing is counted
     charge(o.userId, day, 1);
     charged = true;
     let res: Response | undefined, model = c.model, err = new AiError(504, MSG.silent);
@@ -331,16 +332,17 @@ export async function* tutorReply(uid: number, chatId: number, input: { text?: u
   if (!chat) throw new AiError(404, 'Chat not found.');
   // The question is saved before any AI check, so { retry: true } can always answer it later (after a cap, outage or stop).
   const last = db.prepare('SELECT id, role FROM ai_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1').get(chatId) as { id: number; role: string } | undefined;
+  let stale = 0; // a retried answer is replaced only once a new one is saved, so a cap or outage cannot lose it
   if (input.retry === true) {
     if (!last) throw new AiError(400, 'There is nothing to answer yet.');
-    if (last.role === 'assistant') db.prepare('DELETE FROM ai_messages WHERE id = ?').run(last.id);
+    if (last.role === 'assistant') stale = last.id;
   } else {
     const q = text(input.text, CHAT.text);
     if (!q) throw new AiError(400, `Write a question of up to ${CHAT.text} characters.`);
     if ((db.prepare('SELECT COUNT(*) n FROM ai_messages WHERE chat_id = ?').get(chatId) as { n: number }).n >= CHAT.messages) throw new AiError(400, 'This chat is full. Start a new one.');
     db.prepare("INSERT INTO ai_messages (chat_id, role, content, created_at) VALUES (?, 'user', ?, ?)").run(chatId, q, now());
   }
-  const turns = (db.prepare('SELECT role, content FROM ai_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?').all(chatId, AI.history + 1) as Msg[]).reverse();
+  const turns = (db.prepare('SELECT role, content FROM ai_messages WHERE chat_id = ? AND id != ? ORDER BY id DESC LIMIT ?').all(chatId, stale, AI.history + 1) as Msg[]).reverse();
   const question = turns.pop();
   if (question?.role !== 'user') throw new AiError(400, 'There is nothing to answer yet.');
   const topic = chatTopic(chat);
@@ -355,6 +357,7 @@ export async function* tutorReply(uid: number, chatId: number, input: { text?: u
   ];
   const save = (body: string) => {
     const ids = citeIds(body, pool.keys());
+    if (stale) db.prepare('DELETE FROM ai_messages WHERE id = ?').run(stale);
     db.prepare('UPDATE ai_chats SET updated_at = ? WHERE id = ?').run(now(), chatId);
     return { id: Number(db.prepare("INSERT INTO ai_messages (chat_id, role, content, cites, created_at) VALUES (?, 'assistant', ?, ?, ?)").run(chatId, body, JSON.stringify(ids), now()).lastInsertRowid), cites: citeInfo(ids) };
   };
