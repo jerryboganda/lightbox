@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Lightbox: FCPS-II radiology",
   "short_name": "Lightbox",
   "description": "Verified FCPS-II radiology notes, flashcards, MCQs and image atlas.",
@@ -7,13 +8,16 @@
   "display": "standalone",
   "background_color": "#0b0f14",
   "theme_color": "#0b0f14",
+  "categories": ["education", "medical"],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Review flashcards", "url": "/practice/cards" },
-    { "name": "Practise MCQs", "url": "/practice/mcq" }
+    { "name": "Review flashcards", "short_name": "Flashcards", "url": "/practice/cards", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Timed exam", "short_name": "Exam", "url": "/practice/builder?mode=exam", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "AI tutor", "short_name": "Tutor", "url": "/tutor", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Library", "short_name": "Library", "url": "/library", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
   ]
 }
