@@ -55,7 +55,7 @@ export function useAiStream(url: string) {
     set({ phase: 'wait', text });
     const r = await streamAi(url, body, (d) => { text += d; set({ phase: 'stream', text }); }, c.signal);
     if (ac.current !== c) return r;
-    if (r.aborted) set((p) => ({ ...p, phase: p.text ? 'done' : 'idle' }));
+    if (r.aborted) set({ phase: 'idle', text: '' }); // a stopped answer is dropped, so reopening asks again instead of showing it cut short
     else if (r.error) set({ phase: 'error', text, error: r.error, status: r.status, quota: r.quota });
     else set({ phase: 'done', text, done: r.done });
     return r;
