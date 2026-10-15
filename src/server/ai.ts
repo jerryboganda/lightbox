@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import MiniSearch from 'minisearch';
 import { audit, db, now } from './db';
 import { notify } from './notify';
@@ -31,6 +31,9 @@ const env = () => {
     // Thinking effort sent as reasoning_effort (Go gateway counts thinking tokens inside max_tokens). '' omits the hint.
     reasoning: process.env.AI_REASONING === undefined ? 'max' : process.env.AI_REASONING.trim(),
     fallback: process.env.AI_FALLBACK === 'zen' ? process.env.AI_FALLBACK_MODEL?.trim() || '' : '',
+    // Providers without token streaming (e.g. UBAG's OpenAI-compatible facade) can disable
+    // streaming without changing per-feature `stream` flags.
+    stream: (process.env.AI_STREAM ?? 'true').toLowerCase().match(/^1|true|yes|on$/) !== null,
     cap: Number.isFinite(cap) && cap >= 0 ? cap : 30,
   };
 };
@@ -108,7 +111,9 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
   const day = dayKey(now());
   let out = '', tokens = 0, held = false, charged = false, timer: ReturnType<typeof setTimeout> | undefined;
   let idle = new AbortController();
-  const bump = () => { clearTimeout(timer); timer = setTimeout(() => idle.abort(), AI.idleMs); };
+  // No idle abort when streaming is disabled: UBAG-style providers can hold the socket
+// silently (20-40 s) before the first byte, so a 45 s timer would abort a live request.
+  const bump = c.stream ? () => { clearTimeout(timer); timer = setTimeout(() => idle.abort(), AI.idleMs); } : () => {};
   try {
     await acquire();
     held = true;
@@ -125,7 +130,7 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
           method: 'POST',
           signal: o.signal ? AbortSignal.any([o.signal, idle.signal]) : idle.signal,
           headers: { authorization: `Bearer ${c.key}`, 'content-type': 'application/json', 'x-opencode-session': o.session, 'user-agent': 'lightbox-tutor/1.0' },
-          body: JSON.stringify({ model: m, messages: o.messages, stream: !!o.stream, max_tokens: o.maxTokens ?? 800, temperature: o.temperature ?? 0.3, ...(c.reasoning ? { reasoning_effort: c.reasoning } : {}) }),
+          body: JSON.stringify({ model: m, messages: o.messages, stream: c.stream && !!o.stream, max_tokens: o.maxTokens ?? 800, temperature: o.temperature ?? 0.3, response_format: o.kind === 'generate' ? { type: 'json_object' } : undefined, ubag_nonce: randomUUID(), ...(c.reasoning ? { reasoning_effort: c.reasoning } : {}) }),
         });
         if (r.ok) { res = r; model = m; break; }
         r.body?.cancel().catch(() => {});
