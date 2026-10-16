@@ -113,7 +113,8 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
   let idle = new AbortController();
   // No idle abort when streaming is disabled: UBAG-style providers can hold the socket
 // silently (20-40 s) before the first byte, so a 45 s timer would abort a live request.
-  const bump = c.stream ? () => { clearTimeout(timer); timer = setTimeout(() => idle.abort(), AI.idleMs); } : () => {};
+  const wantStream = c.stream && !!o.stream;
+  const bump = wantStream ? () => { clearTimeout(timer); timer = setTimeout(() => idle.abort(), AI.idleMs); } : () => {};
   try {
     await acquire();
     held = true;
@@ -142,7 +143,7 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
       }
     }
     if (!res) throw err;
-    if (o.stream && res.body) {
+    if (wantStream && res.body) {
       for await (const data of sseData(res.body)) {
         bump();
         if (data === '[DONE]') break;
