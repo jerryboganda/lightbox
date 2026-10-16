@@ -191,18 +191,30 @@ export const follow = (signal: AbortSignal) => {
 /** Streams a generator as server-sent events: {d} per chunk, then {done, ...result} or {error}.
  *  Errors before the first chunk (no key, cap, busy) become a JSON response with their status. */
 export async function sse(gen: AsyncGenerator<string, object>, ac: AbortController, extra: object = {}): Promise<Response> {
-  let r: IteratorResult<string, object>;
-  try { r = await gen.next(); } catch (e) { return aiFail(e); }
+  // Fail fast for auth/cap busy cases so callers still receive a proper status code.
+  const first = gen.next();
+  const raced = await Promise.race([
+    first.then((x) => ({ kind: 'value' as const, v: x })).catch((e) => ({ kind: 'error' as const, e })),
+    new Promise<{ kind: 'pending' }>((res) => setTimeout(() => res({ kind: 'pending' }), 5)),
+  ]);
+  if (raced.kind === 'error') return aiFail(raced.e);
   const enc = new TextEncoder();
   return new Response(new ReadableStream({
     async start(c) {
       const send = (o: object) => c.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`));
+      // Heartbeat so transparent proxies do not idle-close while a slow provider
+      // (UBAG browser jobs: 20-90 s) runs before its first byte.
+      const timer = setInterval(() => { try { send({ d: '' }); } catch {} }, 8000);
+      let r: IteratorResult<string, object> = (raced as any).v;
       try {
+        // If the generator had not returned yet, await it now.
+        if (raced.kind === 'pending') r = await first;
         while (!r.done) { send({ d: r.value }); r = await gen.next(); }
         send({ done: true, ...r.value, ...extra });
       } catch (e) {
         if (!ac.signal.aborted) try { send({ error: toAiError(e).message }); } catch {}
       } finally {
+        clearInterval(timer);
         await gen.return(undefined as never).catch(() => {});
         try { c.close(); } catch {}
       }
