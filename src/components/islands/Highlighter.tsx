@@ -1,10 +1,12 @@
-// Floating toolbar on text selected inside #main: highlight, note, flashcard, copy with source, search.
+// Floating toolbar on text selected inside #main: highlight, ask AI, note, flashcard, copy with source, search.
 // Highlights are stored as quote + prefix/suffix and re-painted as <mark class="lb-hl"> on every page load.
 // Mounted once in App.astro with transition:persist, so listeners live for the whole session.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as RKeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Copy, Flag, Layers, Search, StickyNote, Trash2, X } from 'lucide-react';
+import { navigate } from 'astro:transitions/client';
+import { Copy, Flag, Layers, Search, Sparkles, StickyNote, Trash2, X } from 'lucide-react';
 import { toast } from '../../scripts/toast';
+import { askPrompt, stashAsk } from '../../lib/askAi';
 import { reduced } from '../../scripts/motion';
 import { ReportDialog, type ReportTarget } from './ReportButton';
 import '../../styles/personal.css';
@@ -12,8 +14,8 @@ import '../../styles/personal.css';
 type Color = 'amber' | 'cyan' | 'green' | 'violet';
 const COLORS: Color[] = ['amber', 'cyan', 'green', 'violet'];
 type Hl = { id: number; quote: string; prefix: string; suffix: string; color: Color; note: string; factId: string | null };
-type Sel = { start: number; end: number; quote: string; prefix: string; suffix: string; factId: string | null; phone: boolean };
-type Src = { id: string; fact: string; file: string; unit: number };
+type Sel = { start: number; end: number; quote: string; prefix: string; suffix: string; factId: string | null; section: string | null; phone: boolean };
+type Src = { id: string; fact: string; file: string; unit: number; label: string; system: string; topic: { slug: string; title: string } | null };
 
 // Text inside these never takes part in highlighting (islands re-render their own DOM).
 const SKIP = 'astro-island,script,style,noscript,template,textarea,input,select,button,svg,[contenteditable],[data-no-highlight],[popover],[aria-hidden="true"],.sr-only';
@@ -118,7 +120,8 @@ function capture(): Sel | null {
   const quote = s.text.slice(start, end);
   if (quote.length < 2 || quote.length > 1000) return null;
   const factId = elOf(r.startContainer)?.closest('[data-fact]')?.getAttribute('data-fact') || elOf(r.endContainer)?.closest('[data-fact]')?.getAttribute('data-fact') || null;
-  return { start, end, quote, prefix: s.text.slice(Math.max(0, start - CTX), start), suffix: s.text.slice(end, end + CTX), factId, phone: isPhone() };
+  const section = elOf(r.startContainer)?.closest('section')?.querySelector('h2')?.textContent?.trim() || null;
+  return { start, end, quote, prefix: s.text.slice(Math.max(0, start - CTX), start), suffix: s.text.slice(end, end + CTX), factId, section, phone: isPhone() };
 }
 
 // What a selection can be reported against: its fact, else the topic note or fact page it sits on.
@@ -360,6 +363,21 @@ export default function Highlighter() {
     searchFor(s.quote.split(/\s+/).slice(0, 8).join(' '));
   };
 
+  // Opens the tutor with a question built from the selection, its fact, topic, section and source page.
+  const askAi = async () => {
+    const s = selRef.current;
+    if (!s) return;
+    clearSel();
+    const src = s.factId ? await factSource(s.factId) : null;
+    const [, a, , c] = location.pathname.split('/');
+    const onTopic = a === 'study' && !!c && c !== 'print';
+    const slug = onTopic ? decodeURIComponent(c) : src?.topic?.slug ?? null;
+    const topic = onTopic ? mainEl()?.querySelector('h1')?.textContent?.trim() : src?.topic?.title;
+    const q = askPrompt({ quote: s.quote, topic, section: onTopic ? s.section : null, system: src?.system, factId: src ? s.factId : null, label: src?.label, source: src ? `${src.file} p${src.unit}` : null });
+    if (!stashAsk(q)) toast("Couldn't pass your selection on. Ask in the tutor instead.", 'bad');
+    navigate(`/tutor${slug ? `?topic=${encodeURIComponent(slug)}` : ''}`);
+  };
+
   const recolor = async (c: Color) => {
     const h = edit && hls.current.get(edit.id);
     if (!h || h.color === c) return;
@@ -426,6 +444,7 @@ export default function Highlighter() {
   };
 
   const actions = [
+    ...(location.pathname.startsWith('/tutor') ? [] : [{ label: 'Ask AI about this', short: 'Ask AI', icon: Sparkles, run: askAi }]),
     { label: 'Note', short: 'Note', icon: StickyNote, run: addNote },
     { label: 'Make a flashcard', short: 'Flashcard', icon: Layers, run: makeCard },
     { label: 'Copy with source', short: 'Copy', icon: Copy, run: copy },

@@ -234,6 +234,19 @@ describe('tutor chats', () => {
     await expect(run(tutorReply(u, id, { text: 'x'.repeat(2001) }))).rejects.toMatchObject({ status: 400 });
   });
 
+  it('pins a fact named in the question, with its source page, ahead of everything else', async () => {
+    const u = ids['ai-m3'];
+    const f = facts.find((x) => x.topics.length)!;
+    const { id } = createChat(u, 'Pinned', null) as { id: number };
+    fetchMock.mockImplementation(async () => deltas(`Because [${f.id}].`));
+    const { result } = await run(tutorReply(u, id, { text: `Explain “anything unrelated”\n\nFact ${f.id}` }));
+    const msgs = JSON.parse(fetchMock.mock.calls[0][1].body).messages;
+    expect(msgs[0].content).toContain(`[${f.id}] in their notes`);
+    expect(msgs.at(-1).content).toContain(`Source: ${f.file} p${f.unit}`);
+    expect(msgs.at(-1).content.indexOf(`[${f.id}]`)).toBeLessThan(msgs.at(-1).content.indexOf('Question:'));
+    expect(result.cites.map((c) => c.id)).toEqual([f.id]);
+  });
+
   it('keeps the old answer when a retry cannot run', async () => {
     vi.stubEnv('AI_DAILY_CAP', '1');
     const u = ids['ai-m1'];

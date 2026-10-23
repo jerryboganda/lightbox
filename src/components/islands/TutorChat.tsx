@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, ArrowUpRight, BookOpenText, Check, Copy, PanelLeft, Pencil, RotateCcw, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
 import { toast } from '../../scripts/toast';
 import { reduced } from '../../scripts/motion';
+import { takeAsk } from '../../lib/askAi';
 import { AiState, AiText, Thinking, left, streamAi, useReveal, type CiteInfo, type Quota } from './AiText';
 
 export interface TopicRef { slug: string; title: string; href: string }
@@ -181,6 +182,12 @@ export default function TutorChat(p: TutorChatProps) {
     ta.current?.focus({ preventScroll: true });
   };
   const send = () => { const q = text.trim(); if (q) ask(q.slice(0, MAX)); };
+
+  // "Ask AI" on a highlight lands here with its question ready; it is taken once, so a reload never asks twice.
+  useEffect(() => {
+    const a = takeAsk();
+    if (a && p.enabled && !p.active) ask(a.q);
+  }, []);
 
   const open = async (id: number) => {
     sheet.current?.close();

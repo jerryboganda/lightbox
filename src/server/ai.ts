@@ -368,13 +368,18 @@ export async function* tutorReply(uid: number, chatId: number, input: { text?: u
   if (question?.role !== 'user') throw new AiError(400, 'There is nothing to answer yet.');
   const topic = chatTopic(chat);
   const prev = [...turns].reverse().find((m) => m.role === 'user')?.content ?? '';
+  // Fact ids named in the question (the "Ask AI" button on a highlight adds them) are pinned first, with their source page.
+  const pinned = [...new Set(question.content.match(ID_RE) ?? [])].map((id) => factById.get(id)).filter((f): f is Fact => !!f).slice(0, 3);
   const pool = new Map<string, Fact>();
-  for (const f of topic ? topicFacts(topic).slice(0, 14) : []) pool.set(f.id, f);
+  for (const f of pinned) pool.set(f.id, f);
+  for (const f of pinned) for (const x of facts) if (x.file === f.file && x.unit === f.unit && pool.size < 8) pool.set(x.id, x);
+  for (const f of topic ? topicFacts(topic).slice(0, 14) : []) if (pool.size < 22) pool.set(f.id, f);
   for (const f of retrieve(`${question.content} ${prev}`, AI.k)) if (pool.size < 22) pool.set(f.id, f);
+  const line = (f: Fact) => factLine(f) + (pinned.includes(f) ? `\n  Source: ${f.file} p${f.unit}${f.sources.length ? `; ${f.sources.join('; ')}` : ''}` : '');
   const messages: Msg[] = [
-    { role: 'system', content: RULES + (topic ? `\nThis chat is about the Lightbox topic "${topic.title}".` : '') },
+    { role: 'system', content: RULES + (topic ? `\nThis chat is about the Lightbox topic "${topic.title}".` : '') + (pinned.length ? `\nThe student selected ${pinned.map((f) => `[${f.id}]`).join(', ')} in their notes: answer about that passage first and use the other facts only as support.` : '') },
     ...turns,
-    { role: 'user', content: `Lightbox facts for this question:\n${[...pool.values()].map(factLine).join('\n') || '(none found)'}\n\nQuestion: ${question.content}` },
+    { role: 'user', content: `Lightbox facts for this question:\n${[...pool.values()].map(line).join('\n') || '(none found)'}\n\nQuestion: ${question.content}` },
   ];
   const save = (body: string) => {
     const ids = citeIds(body, pool.keys());
