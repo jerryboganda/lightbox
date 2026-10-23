@@ -444,7 +444,8 @@ export default function Highlighter() {
   };
 
   const actions = [
-    ...(location.pathname.startsWith('/tutor') ? [] : [{ label: 'Ask AI about this', short: 'Ask AI', icon: Sparkles, run: askAi }]),
+    // `location` does not exist while the island renders on the server.
+    ...(typeof location !== 'undefined' && location.pathname.startsWith('/tutor') ? [] : [{ label: 'Ask AI about this', short: 'Ask AI', icon: Sparkles, run: askAi }]),
     { label: 'Note', short: 'Note', icon: StickyNote, run: addNote },
     { label: 'Make a flashcard', short: 'Flashcard', icon: Layers, run: makeCard },
     { label: 'Copy with source', short: 'Copy', icon: Copy, run: copy },
