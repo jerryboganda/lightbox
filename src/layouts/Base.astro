@@ -20,8 +20,10 @@ const { title, description = 'Lightbox: verified FCPS-II radiology study notes, 
     <script is:inline>
       (() => {
         const get = (k, v) => { try { return localStorage.getItem(k) || v; } catch { return v; } };
-        const apply = (doc = document) => {
-          const d = doc.documentElement, pref = get('lb-theme', 'system');
+        // Focus mode is a reading mode: it only applies on a topic note, so the nav never vanishes elsewhere.
+        const reading = (p) => /^\/study\/[^/]+\/[^/]+\/?$/.test(p) && !/\/print\/?$/.test(p);
+        const apply = (doc = document, path = location.pathname) => {
+          const d = doc.documentElement, pref = get('lb-theme', 'system'), reader = reading(path);
           const dark = pref === 'dark' || (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
           d.dataset.theme = dark ? 'dark' : 'light';
           d.dataset.themePref = pref;
@@ -29,13 +31,14 @@ const { title, description = 'Lightbox: verified FCPS-II radiology study notes, 
           if (m === 'system') delete d.dataset.motion; else d.dataset.motion = m;
           d.dataset.density = get('lb-density', 'comfortable');
           d.dataset.rail = get('lb-rail', 'open');
-          if (get('lb-focus', 'off') === 'on') d.dataset.focus = 'on'; else delete d.dataset.focus;
+          if (reader) d.dataset.reader = ''; else delete d.dataset.reader;
+          if (reader && get('lb-focus', 'off') === 'on') d.dataset.focus = 'on'; else delete d.dataset.focus;
           const fs = get('lb-fs', '');
           if (fs) d.style.setProperty('--fs', fs + '%');
         };
         apply();
         window.lbApplyPrefs = apply;
-        document.addEventListener('astro:before-swap', (e) => apply(e.newDocument));
+        document.addEventListener('astro:before-swap', (e) => apply(e.newDocument, e.to.pathname));
         matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => apply());
       })();
     </script>

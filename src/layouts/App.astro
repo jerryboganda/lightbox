@@ -129,7 +129,9 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
     (window as any).lbFocusClick = true;
     document.addEventListener('click', (e) => {
       if (!(e.target as Element | null)?.closest?.('[data-focus-toggle]')) return;
-      const d = document.documentElement, on = d.dataset.focus !== 'on';
+      const d = document.documentElement;
+      if (!('reader' in d.dataset)) return; // focus mode only exists on topic notes
+      const on = d.dataset.focus !== 'on';
       if (on) d.dataset.focus = 'on'; else delete d.dataset.focus;
       document.querySelectorAll('[data-focus-toggle]').forEach((b) => b.setAttribute('aria-pressed', String(on)));
       try { localStorage.setItem('lb-focus', on ? 'on' : 'off'); } catch {}

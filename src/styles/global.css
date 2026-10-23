@@ -118,6 +118,7 @@
 @media (max-width: 767px) { #lb-toasts { bottom: calc(5.25rem + env(safe-area-inset-bottom)); } }
 
 /* Focus mode: chrome steps back, the page narrows to a reading column. */
+html:not([data-reader]) [data-focus-toggle] { display: none; }
 [data-focus="on"] .rail, [data-focus="on"] .tabs, [data-focus="on"] .search, [data-focus="on"] .avatar, [data-focus="on"] [data-theme-toggle] { display: none !important; }
 [data-focus="on"] .shell { grid-template-columns: minmax(0, 1fr); }
 [data-focus="on"] .content { max-width: 56rem; }
