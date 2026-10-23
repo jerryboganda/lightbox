@@ -122,4 +122,4 @@
 [data-focus="on"] .shell { grid-template-columns: minmax(0, 1fr); }
 [data-focus="on"] .content { max-width: 56rem; }
 [data-focus="on"] .content.wide { max-width: 72rem; }
-[data-focus="on"] .topbar { background: transparent; border-color: transparent; backdrop-filter: none; }
+[data-focus="on"] .topbar { background: var(--bg); border-color: transparent; backdrop-filter: none; }
