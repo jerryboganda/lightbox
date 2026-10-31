@@ -1,6 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { bootstrapAdmin, COOKIE, readSession } from './server/auth';
 import { db, now } from './server/db';
+import { errorText, log, observe } from './server/log';
 
 const PUBLIC = [/^\/login$/, /^\/api\/auth\/login$/, /^\/api\/health$/, /^\/_astro\//, /^\/(favicon|manifest|sw\.js|icons\/|offline)/];
 const MUST_CHANGE_OK = [/^\/account/, /^\/api\/auth\//];
@@ -49,5 +50,16 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
       return done(path.startsWith('/api/') ? Response.json({ error: 'Admins only.' }, { status: 403 }) : ctx.redirect('/'));
     }
   }
-  return done(await next());
+  if (path.startsWith('/_astro/') || path.startsWith('/icons/')) return done(await next());
+  const t0 = performance.now();
+  const route = (ctx as { routePattern?: string }).routePattern || path;
+  let res: Response;
+  try {
+    res = await next();
+  } catch (e) {
+    log('error', 'exception', { route: `${ctx.request.method} ${route}`, message: errorText(e), userId: user?.id ?? null });
+    res = path.startsWith('/api/') ? Response.json({ error: 'Something went wrong. Try again.' }, { status: 500 }) : new Response('Something went wrong. Try again.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+  }
+  observe(route, ctx.request.method, res.status, performance.now() - t0, user?.id ?? null);
+  return done(res);
 });

@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowLeft, ArrowRight, Check, CircleAlert, ExternalLink, Info, RotateCcw, Shuffle, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CircleAlert, ExternalLink, Info, RotateCcw, Shuffle, ThumbsUp, X } from 'lucide-react';
 import { host, PAPERS, urls, verdictBadge } from '../../lib/quiz';
+import AiMistake from './AiMistake';
 import Thread from './Thread';
 
 type Mcq = { qid: string; paper: string; stem: string; options: Record<string, string>; key: string; keyEvidence: string; myAnswer: string; confidence: string; reason: string; verdict: string; evidence: string; note: string; notBlind: boolean; notBlindReason: string; file: string; unit: number };
 type Attempt = { qid: string; choice: string; correct: number | null };
-const SETS = [['all', 'All'], ['keyed', 'With answer key'], ['disputed', 'Disputed'], ['unanswered', 'Not answered yet'], ['wrong', 'Got wrong']] as const;
+const SETS = [['all', 'All'], ['keyed', 'With answer key'], ['mistakes', 'Mistakes due'], ['disputed', 'Disputed'], ['unanswered', 'Not answered yet'], ['wrong', 'Got wrong']] as const;
 
 export default function McqPlayer() {
   const [all, setAll] = useState<Mcq[] | null>(null);
   const [hist, setHist] = useState<Map<string, Attempt>>(new Map());
+  // Mistakes due when the page opened; a snapshot so answering one does not pull it out from under the student.
+  const [due, setDue] = useState<string[]>([]);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [paper, setPaper] = useState('all');
   const [set, setSet] = useState<string>('keyed');
   const [shuffle, setShuffle] = useState(false);
@@ -24,16 +28,24 @@ export default function McqPlayer() {
   const want = useRef<string | null>(null);
 
   useEffect(() => {
-    Promise.all([fetch('/api/data/mcqs').then((r) => r.json()), fetch('/api/mcq/attempt').then((r) => r.json())]).then(([m, h]: [Mcq[], Attempt[]]) => {
+    const mist = fetch('/api/mistakes').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    Promise.all([fetch('/api/data/mcqs').then((r) => r.json()), fetch('/api/mcq/attempt').then((r) => r.json()), mist]).then(([m, h, mk]: [Mcq[], Attempt[], { items: { qid: string; due: number }[]; now: number } | null]) => {
       setAll(m.filter((x) => Object.keys(x.options).length >= 2));
       setHist(new Map(h.map((a) => [a.qid, a])));
-      const q = new URLSearchParams(location.search).get('q');
+      if (mk) setDue(mk.items.filter((x) => x.due <= mk.now).map((x) => x.qid));
+      const sp = new URLSearchParams(location.search);
+      const q = sp.get('q'), s = sp.get('set');
+      if (s && SETS.some(([v]) => v === s)) { setSet(s); setPaper('all'); }
       if (q) { want.current = q; setSet('all'); setPaper('all'); }
     });
   }, []);
 
   const list = useMemo(() => {
     if (!all) return [];
+    if (set === 'mistakes') {
+      const by = new Map(all.map((x) => [x.qid, x]));
+      return due.map((q) => by.get(q)!).filter((x) => x && (paper === 'all' || x.paper === paper));
+    }
     let l = all.filter((m) => (paper === 'all' || m.paper === paper) && (
       set === 'all' || (set === 'keyed' && m.key) || (set === 'disputed' && m.verdict === 'DISPUTED') ||
       (set === 'unanswered' && !hist.has(m.qid)) || (set === 'wrong' && hist.get(m.qid)?.correct === 0)));
@@ -43,7 +55,7 @@ export default function McqPlayer() {
       l = [...l].sort(() => rnd() - 0.5);
     }
     return l;
-  }, [all, paper, set, shuffle, seed]);
+  }, [all, paper, set, shuffle, seed, due]);
 
   const m = list[Math.min(i, list.length - 1)];
   const prior = m && hist.get(m.qid);
@@ -54,7 +66,7 @@ export default function McqPlayer() {
     const k = want.current ? list.findIndex((x) => x.qid === want.current) : -1;
     if (list.length) want.current = null;
     setI(Math.max(0, k));
-  }, [all, paper, set, shuffle, seed]);
+  }, [all, paper, set, shuffle, seed, due]);
 
   const go = useCallback((d: number) => { setDir(d); setI((x) => Math.max(0, Math.min(list.length - 1, x + d))); }, [list.length]);
 
@@ -69,9 +81,14 @@ export default function McqPlayer() {
     }
   }, [m, pick]);
 
+  const dismiss = useCallback(async (qid: string) => {
+    const r = await fetch(`/api/mistakes?qid=${encodeURIComponent(qid)}`, { method: 'DELETE' }).catch(() => null);
+    if (r?.ok) setDismissed((d) => new Set(d).add(qid));
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!m || /input|select|textarea/i.test((e.target as HTMLElement).tagName) || (e.target as HTMLElement).closest?.('[data-thread], dialog, [popover]') || e.metaKey || e.ctrlKey) return;
+      if (!m || /input|select|textarea/i.test((e.target as HTMLElement).tagName) || (e.target as HTMLElement).closest?.('[data-thread], [data-ai], dialog, [popover]') || e.metaKey || e.ctrlKey) return;
       const letters = Object.keys(m.options);
       const k = e.key.toUpperCase();
       const idx = /^[1-9]$/.test(k) ? Number(k) - 1 : letters.indexOf(k);
@@ -110,7 +127,9 @@ export default function McqPlayer() {
       <div className="mt-3 h-1 overflow-hidden rounded-full bg-sunk" aria-hidden="true"><motion.div className="h-full rounded-full bg-accent" animate={{ width: `${list.length ? ((i + 1) / list.length) * 100 : 0}%` }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }} /></div>
 
       {!m ? (
-        <div className="panel mt-6 grid place-items-center gap-2 px-6 py-16 text-center"><p className="font-medium">No questions in this set</p><p className="text-sm text-muted">Pick another set, or answer some questions first.</p><button className="btn btn-sm mt-2" onClick={() => setSet('all')}><RotateCcw size={14} />Show all questions</button></div>
+        <div className="panel mt-6 grid place-items-center gap-2 px-6 py-16 text-center">{set === 'mistakes'
+          ? <><p className="font-medium">No mistakes due</p><p className="text-sm text-muted">Questions you get wrong come back here after 1, 3, 7 and 21 days until you get them right.</p></>
+          : <><p className="font-medium">No questions in this set</p><p className="text-sm text-muted">Pick another set, or answer some questions first.</p></>}<button className="btn btn-sm mt-2" onClick={() => setSet('all')}><RotateCcw size={14} />Show all questions</button></div>
       ) : (
         <AnimatePresence mode="wait" custom={dir} initial={false}>
           <motion.article key={m.qid} custom={dir} initial={{ opacity: 0, x: 24 * dir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 * dir }} transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }} className="panel mt-5 p-5 sm:p-7">
@@ -147,6 +166,12 @@ export default function McqPlayer() {
                   {m.note && <p className="text-muted">{m.note}</p>}
                   {urls(m.evidence).length > 0 && <div className="flex flex-wrap gap-2">{urls(m.evidence).map((u) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="chip"><ExternalLink size={13} />{host(u)}</a>)}</div>}
                   {m.notBlind && <p className="flex gap-2 text-xs text-faint"><Info size={14} className="mt-0.5 shrink-0" />{m.notBlindReason}</p>}
+                  {m.key && pick && pick !== m.key && Object.hasOwn(m.options, m.key) && <AiMistake key={`${m.qid}-${pick}`} qid={m.qid} choice={pick} keyLetter={m.key} />}
+                  {m.key && pick && pick !== m.key && <p className="text-xs text-faint">Added to your mistakes. It comes back tomorrow, then after 3, 7 and 21 days.</p>}
+                  {set === 'mistakes' && pick === m.key && !dismissed.has(m.qid) && (
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => dismiss(m.qid)}><ThumbsUp size={14} />I've got this, stop showing it</button>
+                  )}
+                  {dismissed.has(m.qid) && <p className="text-xs text-ok">Removed from your mistakes.</p>}
                 </motion.div>
               )}
             </AnimatePresence>

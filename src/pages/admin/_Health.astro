@@ -1,0 +1,74 @@
+---
+import { health } from '../../server/log';
+import { ago } from '../../server/personal';
+
+const h = health();
+const mb = (b: number) => `${(b / 1_048_576).toFixed(1)} MB`;
+const up = (ms: number) => { const m = Math.floor(ms / 60_000); return m < 60 ? `${m} min` : m < 2880 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} days`; };
+const errors = h.counts.filter((c) => c.level === 'error').reduce((a, c) => a + c.n, 0);
+const warns = h.counts.filter((c) => c.level === 'warn').reduce((a, c) => a + c.n, 0);
+const tables = [
+  { id: 'failing', title: 'Failing routes', rows: h.failing, empty: 'No server errors since the last restart.' },
+  { id: 'slowest', title: 'Slowest routes (average)', rows: h.slowest, empty: 'No requests yet.' },
+  { id: 'busiest', title: 'Busiest routes', rows: h.busiest, empty: 'No requests yet.' },
+];
+---
+<section aria-label="Server health" class="grid gap-4">
+  <dl class="panel hstats reveal" style="--i:2">
+    <div><dt>Up for</dt><dd class="num">{up(h.uptime)}</dd></div>
+    <div><dt>Errors, 24 h</dt><dd class:list={['num', { 'text-bad': errors > 0 }]}>{errors}</dd></div>
+    <div><dt>Warnings, 24 h</dt><dd class:list={['num', { 'text-signal': warns > 0 }]}>{warns}</dd></div>
+    <div><dt>Memory</dt><dd class="num">{mb(h.memory.rss)}</dd></div>
+    <div><dt>Database</dt><dd class="num">{mb(h.dbBytes)}</dd></div>
+    <div><dt>Node</dt><dd class="num">{h.node}</dd></div>
+  </dl>
+
+  <div class="grid gap-4 lg:grid-cols-3">
+    {tables.map((t, i) => (
+      <section class="panel overflow-hidden reveal" style={`--i:${3 + i}`} aria-labelledby={`h-${t.id}`}>
+        <h2 id={`h-${t.id}`} class="px-4 pt-3.5 text-sm font-medium">{t.title}</h2>
+        {t.rows.length === 0 ? <p class="px-4 pb-4 pt-2 text-sm text-muted">{t.empty}</p> : (
+          <table class="htab">
+            <thead><tr><th scope="col">Route</th><th scope="col" class="r">Calls</th><th scope="col" class="r">Avg</th><th scope="col" class="r">Max</th>{t.id === 'failing' && <th scope="col" class="r">5xx</th>}</tr></thead>
+            <tbody>{t.rows.map((r) => <tr><td><code>{r.route}</code></td><td class="num r">{r.n}</td><td class="num r">{r.avg} ms</td><td class="num r">{r.max} ms</td>{t.id === 'failing' && <td class="num r text-bad">{r.errors}</td>}</tr>)}</tbody>
+          </table>
+        )}
+      </section>
+    ))}
+  </div>
+
+  <section class="panel overflow-hidden reveal" style="--i:6" aria-labelledby="h-recent">
+    <h2 id="h-recent" class="px-4 pt-3.5 text-sm font-medium">Recent warnings and errors</h2>
+    {h.recent.length === 0 ? <p class="px-4 pb-4 pt-2 text-sm text-muted">Nothing logged. Server errors, slow requests and browser errors appear here.</p> : (
+      <ol class="hlog">
+        {h.recent.map((r) => (
+          <li>
+            <span class:list={['badge', r.level === 'error' ? 's-disputed' : 's-unchecked']}>{r.kind}</span>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm"><code>{r.route || '—'}</code>{r.status && <span class="num text-muted"> · {r.status}</span>}{r.ms !== null && <span class="num text-muted"> · {r.ms} ms</span>}{r.userId && <span class="text-muted"> · user #{r.userId}</span>}</p>
+              {r.message && <details><summary class="text-xs text-muted">{r.message.split('\n')[0].slice(0, 140)}</summary><pre>{r.message}</pre></details>}
+            </div>
+            <time class="text-xs text-faint" datetime={new Date(r.at).toISOString()}>{ago(r.at)}</time>
+          </li>
+        ))}
+      </ol>
+    )}
+  </section>
+  <p class="text-xs text-faint">Request timings count since the last restart. Set <code>LOG_LEVEL=info</code> to log every request to the container output.</p>
+</section>
+
+<style>
+  .hstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: 0.75rem 1.25rem; padding: 1rem 1.15rem; }
+  .hstats dt { font-size: 0.75rem; color: var(--muted); }
+  .hstats dd { margin-top: 0.15rem; font-size: 1.1rem; font-weight: 500; }
+  .htab { width: 100%; font-size: 0.8125rem; border-collapse: collapse; margin-top: 0.5rem; }
+  .htab th, .htab td { padding: 0.45rem 0.6rem; text-align: left; border-top: 1px solid var(--line); }
+  .htab th:first-child, .htab td:first-child { padding-left: 1rem; }
+  .htab th:last-child, .htab td:last-child { padding-right: 1rem; }
+  .htab thead th { font-weight: 400; font-size: 0.75rem; color: var(--faint); border-top: 0; }
+  .htab .r { text-align: right; white-space: nowrap; }
+  .htab code, .hlog code { font-family: var(--font-mono); font-size: 0.75rem; overflow-wrap: anywhere; }
+  .hlog li { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.6rem 1rem; border-top: 1px solid var(--line); }
+  .hlog li:first-child { margin-top: 0.5rem; }
+  .hlog pre { margin-top: 0.4rem; max-height: 12rem; overflow: auto; padding: 0.5rem; border-radius: 6px; background: var(--sunk); font-size: 0.7rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>

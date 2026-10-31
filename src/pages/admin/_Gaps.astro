@@ -1,0 +1,58 @@
+---
+import Icon from '../../components/Icon.astro';
+import { gaps } from '../../server/gaps';
+import { ago } from '../../server/personal';
+
+const g = gaps();
+const LABEL: Record<string, string> = { unchecked: 'Unchecked', disputed: 'Disputed' };
+---
+<section aria-label="Content gaps" class="grid gap-4 lg:grid-cols-2">
+  <section class="panel gp reveal lg:col-span-2" style="--i:2" aria-labelledby="g-unc">
+    <h2 id="g-unc"><Icon name="MessageCircleQuestion" size={16} />Tutor questions the notes could not answer <span class="num text-faint">{g.uncovered.length}</span></h2>
+    <p class="gp-sub">Each one is a candidate for a new fact or topic section. Last 60 days.</p>
+    {g.uncovered.length === 0 ? <p class="gp-empty">None yet. When the tutor says “Not covered in Lightbox notes yet”, the question lands here.</p> : (
+      <ol>{g.uncovered.map((u) => <li><span class="flex-1">{u.question}</span><span class="num text-muted">{u.n > 1 ? `×${u.n}` : ''}</span><time class="text-xs text-faint">{ago(u.last)}</time></li>)}</ol>
+    )}
+  </section>
+
+  <section class="panel gp reveal" style="--i:3" aria-labelledby="g-hard">
+    <h2 id="g-hard"><Icon name="CircleX" size={16} />Questions the class gets wrong</h2>
+    <p class="gp-sub">Latest answer per person. Check the key and the explanation.</p>
+    {g.hardMcqs.length === 0 ? <p class="gp-empty">No wrong answers yet.</p> : (
+      <ol>{g.hardMcqs.map((q) => <li><a href={q.href} class="flex-1 hover:text-accent">{q.stem}</a><span class="num text-bad" title={`${q.wrong} of ${q.tries} wrong`}>{q.wrong}/{q.tries}</span></li>)}</ol>
+    )}
+  </section>
+
+  <section class="panel gp reveal" style="--i:4" aria-labelledby="g-leech">
+    <h2 id="g-leech"><Icon name="RotateCcw" size={16} />Cards the class keeps forgetting</h2>
+    <p class="gp-sub">Rated “Again” at least twice. A clearer wording or picture may help.</p>
+    {g.leeches.length === 0 ? <p class="gp-empty">No repeat lapses yet.</p> : (
+      <ol>{g.leeches.map((f) => <li><a href={f.href} class="flex-1 hover:text-accent"><span class="num text-faint">{f.id}</span> {f.fact}</a><span class="num text-signal" title={`${f.again} lapses from ${f.people} people`}>{f.again}</span></li>)}</ol>
+    )}
+  </section>
+
+  <section class="panel gp reveal" style="--i:5" aria-labelledby="g-nomcq">
+    <h2 id="g-nomcq"><Icon name="ListPlus" size={16} />Read topics with no past-paper question</h2>
+    <p class="gp-sub">Good targets for AI-drafted questions (AI review tab).</p>
+    {g.noMcqTopics.length === 0 ? <p class="gp-empty">Every topic has a question.</p> : (
+      <ol>{g.noMcqTopics.map((t) => <li><a href={t.href} class="flex-1 hover:text-accent">{t.title}</a><span class="num text-muted" title="Readers">{t.readers} read · {t.facts} facts</span></li>)}</ol>
+    )}
+  </section>
+
+  <section class="panel gp reveal" style="--i:6" aria-labelledby="g-unchk">
+    <h2 id="g-unchk"><Icon name="ShieldQuestion" size={16} />Unverified facts people are reading</h2>
+    <p class="gp-sub">Verify these first: they are in the topics with the most readers.</p>
+    {g.unchecked.length === 0 ? <p class="gp-empty">Nothing unverified in read topics.</p> : (
+      <ol>{g.unchecked.map((f) => <li><a href={f.href} class="flex-1 hover:text-accent"><span class="num text-faint">{f.id}</span> {f.fact}</a><span class={`badge s-${f.label}`}>{LABEL[f.label]}</span></li>)}</ol>
+    )}
+  </section>
+</section>
+
+<style>
+  .gp { padding: 1rem 0 0.4rem; overflow: hidden; }
+  .gp h2 { display: flex; align-items: center; gap: 0.5rem; padding: 0 1rem; font-size: 0.875rem; font-weight: 500; }
+  .gp-sub { padding: 0.15rem 1rem 0.6rem; font-size: 0.75rem; color: var(--muted); }
+  .gp-empty { padding: 0.4rem 1rem 0.8rem; font-size: 0.875rem; color: var(--muted); }
+  .gp li { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.55rem 1rem; border-top: 1px solid var(--line); font-size: 0.875rem; line-height: 1.45; }
+  .gp li > :last-child { flex: none; }
+</style>

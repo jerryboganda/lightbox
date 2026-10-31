@@ -1,12 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import MiniSearch from 'minisearch';
 import { audit, db, now } from './db';
+import { errorText, log } from './log';
 import { notify } from './notify';
 import { dayKey, text } from './personal';
 import { factById, facts, isEditionClash, mcqs, SYSTEMS, topicBySlug, type Fact, type Topic } from '../lib/data';
+import { mcqStem } from '../lib/sources';
 
 // AI gateway (OpenCode Go, OpenAI-compatible): grounding on Lightbox facts, per-user daily caps, a global concurrency limit and a shared cache.
-export type Kind = 'explain' | 'dispute' | 'tutor' | 'generate';
+export type Kind = 'explain' | 'dispute' | 'tutor' | 'generate' | 'mistake';
 export interface Msg { role: 'system' | 'user' | 'assistant'; content: string }
 export interface Quota { used: number; cap: number }
 export interface Cite { id: string; fact: string; label: string }
@@ -19,7 +21,7 @@ export const AI = { concurrent: 2, queueMs: 8_000, queueMax: 8, idleMs: 45_000, 
 export const MSG = { off: 'AI is not configured on this server.', unavailable: 'AI unavailable.', busy: 'AI is busy, try again shortly.', silent: 'AI did not answer.' };
 const GO = 'https://opencode.ai/zen/go/v1';
 const ZEN = 'https://opencode.ai/zen/v1/chat/completions';
-const CACHED = new Set<Kind>(['explain', 'dispute']);
+const CACHED = new Set<Kind>(['explain', 'dispute', 'mistake']);
 
 // Read per call so a deploy (or a test) can change them without a restart. The key never leaves this module.
 const env = () => {
@@ -177,7 +179,7 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
 
 // ---- HTTP helpers ----
 export const aiFail = (e: unknown) => {
-  if (!(e instanceof AiError) && !(e instanceof Error && e.name === 'AbortError')) console.error('ai:', e);
+  if (!(e instanceof AiError) && !(e instanceof Error && e.name === 'AbortError')) log('error', 'ai', { message: errorText(e) });
   const x = toAiError(e);
   return Response.json({ error: x.message, quota: x.quota }, { status: x.status });
 };
@@ -315,6 +317,31 @@ export async function* summariseDispute(uid: number, type: unknown, id: unknown,
   const r = yield* callModel({ kind: 'dispute', userId: uid, session: `lightbox-u${uid}-dispute`, stream: true, maxTokens: 1200, temperature: 0.1, signal,
     messages: [{ role: 'system', content: DISPUTE }, { role: 'user', content: `Record:\n${record}` }] });
   return { cached: r.cached, quota: r.quota };
+}
+
+// ---- explain my mistake: why the key is right and why the chosen option tempts ----
+/** Facts from the paper page the question was printed on. */
+export const mcqPageFacts = (m: { file: string; unit: number }) => facts.filter((f) => f.unit === m.unit && m.file.startsWith(mcqStem(f.file) + '__u'));
+
+export async function* explainMistake(uid: number, qid: string, choice: string, fresh = false, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; cached: boolean; quota: Quota }> {
+  const m = mcqById.get(qid);
+  if (!m || !m.key || !Object.hasOwn(m.options, m.key)) throw new AiError(404, 'That question has no answer key.');
+  if (!Object.hasOwn(m.options, choice) || choice === m.key) throw new AiError(400, 'Pick the option you chose, not the key.');
+  const page = mcqPageFacts(m);
+  const near = [...new Set([...page, ...retrieve(`${m.stem} ${m.options[m.key]}`, 6)])].slice(0, 12);
+  const record = lines([['Question', m.stem], ['Options', Object.entries(m.options).map(([k, v]) => `${k}) ${v}`).join('; ')], ['Answer key', `${m.key}) ${m.options[m.key]}`],
+    ['Student chose', `${choice}) ${m.options[choice]}`], ['Key evidence', m.keyEvidence], ['Reviewer note', m.note]]);
+  const messages: Msg[] = [
+    { role: 'system', content: RULES },
+    { role: 'user', content: `${record}\n\nLightbox facts that may help:\n${near.map(factLine).join('\n') || '(none)'}\n\n` +
+      `A candidate chose ${choice} but the key is ${m.key}. In under 150 words, in exactly this shape:
+**Why ${m.key} is right:** one or two sentences, citing facts.
+**Why ${choice} is tempting:** one sentence on the trap, then why it does not fit this stem.
+**Remember:** one short line or mnemonic that separates the two.
+Use only the record and the facts. If they do not explain it, say "Not covered in Lightbox notes yet." for that part instead of guessing.` },
+  ];
+  const r = yield* callModel({ kind: 'mistake', userId: uid, session: `lightbox-u${uid}-mistake`, messages, stream: true, maxTokens: 1400, temperature: 0.2, fresh, signal });
+  return { cites: citeInfo(citeIds(r.text, near.map((x) => x.id))), cached: r.cached, quota: r.quota };
 }
 
 // ---- tutor chats ----

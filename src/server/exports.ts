@@ -127,10 +127,13 @@ export function myData(uid: number) {
     'SELECT m.chat_id chatId, m.role, m.content, m.cites, m.created_at createdAt FROM ai_messages m JOIN ai_chats c ON c.id = m.chat_id WHERE c.user_id = ? ORDER BY m.chat_id, m.id');
   const group = <T extends Record<K, number>, K extends string>(rows: T[], k: K) => rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map<number, T[]>());
   const itemsBy = group(colItems, 'cid'), answersBy = group(answers, 'examId'), messagesBy = group(messages, 'chatId');
+  const pref = db.prepare('SELECT minutes, confidence, retention, prefs, onboarded_at onboardedAt, updated_at updatedAt FROM profiles WHERE user_id = ?').get(uid) as { confidence: string; prefs: string } | undefined;
   return {
     app: 'Lightbox', exportedAt: new Date().toISOString(), times: 'Unix epoch milliseconds (UTC)',
     profile: db.prepare('SELECT username, display_name displayName, role, created_at createdAt, last_seen_at lastSeenAt FROM users WHERE id = ?').get(uid),
     goals: db.prepare('SELECT cards, mcqs, minutes, exam_date examDate, updated_at updatedAt FROM goals WHERE user_id = ?').get(uid) ?? null,
+    studyProfile: pref ? { ...pref, confidence: JSON.parse(pref.confidence), prefs: JSON.parse(pref.prefs) } : null,
+    mistakes: all('SELECT qid, choice, reason, step, misses, due, created_at createdAt, cleared_at clearedAt FROM mistakes WHERE user_id = ? ORDER BY created_at'),
     marks: all('SELECT item_type type, item_id id, kind, created_at createdAt FROM marks WHERE user_id = ? ORDER BY created_at, rowid'),
     collections: cols.map((c) => ({ ...c, shared: !!c.shared, items: (itemsBy.get(c.id) ?? []).map(({ cid: _, ...i }) => i) })),
     notes: all('SELECT item_type type, item_id id, body, created_at createdAt, updated_at updatedAt FROM notes WHERE user_id = ? ORDER BY created_at, id'),

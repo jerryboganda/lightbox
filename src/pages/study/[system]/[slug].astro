@@ -8,9 +8,10 @@ import CollectMenu from '../../../components/islands/CollectMenu';
 import ReportButton from '../../../components/islands/ReportButton';
 import Thread from '../../../components/islands/Thread';
 import AiGenerate from '../../../components/islands/AiGenerate';
-import { factById, topics, topicBySlug, SYSTEMS, LABELS } from '../../../lib/data';
-import { noteVisit } from '../../../server/progress';
-import { compareWith } from '../../../server/study';
+import { cardByFact, factById, mcqs, topics, topicBySlug, SYSTEMS, LABELS } from '../../../lib/data';
+import { deckStatus, noteVisit } from '../../../server/progress';
+import { compareWith, inPlayer } from '../../../server/study';
+import { mcqTopics } from '../../../server/analytics';
 import { sourceHref } from '../../../lib/sources';
 
 const { system, slug } = Astro.params;
@@ -20,6 +21,12 @@ noteVisit(Astro.locals.user!.id, 'topic', Astro.url.pathname, t.title);
 
 const ids = [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))];
 const fs = ids.map((id) => factById.get(id)!).filter(Boolean);
+const deck = deckStatus(Astro.locals.user!.id, ids);
+const toLearn = deck.cards - deck.inDeck;
+// Quick check: up to five recall cards spread across the note, then the past-paper questions printed on its pages.
+const recall = fs.filter((f) => f.label !== 'disputed' && cardByFact.has(f.id));
+const checks = (recall.length <= 5 ? recall : [0, 1, 2, 3, 4].map((k) => recall[Math.floor((k * recall.length) / 5)])).map((f) => cardByFact.get(f.id)!);
+const pastQs = mcqs.filter((m) => inPlayer(m) && mcqTopics.get(m.qid)?.includes(t.slug)).slice(0, 6);
 const sources = [...new Set(fs.flatMap((f) => f.sources))];
 const files = [...new Map(fs.map((f) => [`${f.file}|${f.unit}`, { label: `${f.file} p${f.unit}`, href: sourceHref(f.file, f.unit) }])).values()];
 const siblings = topics.filter((x) => x.system === system).sort((a, b) => a.title.localeCompare(b.title));
@@ -45,6 +52,14 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
           <span class="text-xs text-faint">from {files.length} source page{files.length === 1 ? '' : 's'}</span>
         </div>
         <div class="actions mt-4 flex flex-wrap items-center gap-1.5" data-no-print>
+          {deck.cards > 0 && (
+            <button type="button" class="btn btn-sm btn-primary" data-learn={t.slug} title={toLearn ? `Add ${toLearn} flashcards from this topic to your deck and start` : 'Review this topic’s flashcards'}>
+              <Icon name="Layers" size={15} />{toLearn ? `Learn this topic (${toLearn} cards)` : `Review ${deck.cards} cards`}
+            </button>
+          )}
+          <button type="button" class="btn btn-sm btn-ghost max-sm:!px-2" data-selftest aria-pressed="false" title="Blur every point; tap one to reveal it"><Icon name="EyeOff" size={15} /><span class="max-sm:sr-only">Self-test</span></button>
+          <button type="button" class="btn btn-sm btn-ghost max-sm:!px-2" data-speak aria-pressed="false" title="Read this note aloud" hidden><Icon name="Volume2" size={15} /><span class="max-sm:sr-only" data-speak-label>Listen</span></button>
+          <span class="mx-0.5 h-5 w-px bg-line max-sm:hidden" aria-hidden="true"></span>
           <MarkToggle type="topic" id={t.slug} kind="bookmark" />
           <MarkToggle type="topic" id={t.slug} kind="weak" />
           <CollectMenu client:visible itemType="topic" itemId={t.slug} />
@@ -79,6 +94,28 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
           </ul>
         </section>
       ))}
+
+      {(checks.length > 0 || pastQs.length > 0) && (
+        <section id="quick-check" class="qc panel mt-12 scroll-mt-24 p-5" aria-labelledby="qc-h" data-no-print>
+          <h2 id="qc-h" class="flex items-center gap-2 text-lg font-medium"><Icon name="ListChecks" size={18} class="text-accent" />Quick check</h2>
+          <p class="mt-1 text-sm text-muted">Say the answer out loud before you open each one. Recalling beats re-reading.</p>
+          {checks.length > 0 && (
+            <ol class="mt-4 grid gap-2">
+              {checks.map((c, i) => (
+                <li><details class="qc-card"><summary><span class="num text-faint">{i + 1}</span><span class="flex-1">{c.front}</span><Icon name="ChevronDown" size={15} class="chev shrink-0 text-faint" /></summary><p class="qc-back">{c.back}</p></details></li>
+              ))}
+            </ol>
+          )}
+          {pastQs.length > 0 && (
+            <div class="mt-5">
+              <h3 class="text-xs font-medium tracking-wide text-faint">Past-paper questions on this topic</h3>
+              <ul class="mt-2 grid gap-1.5 text-sm">
+                {pastQs.map((m) => <li><a href={`/practice/mcq?q=${encodeURIComponent(m.qid)}`} class="qc-q"><Icon name="CircleHelp" size={14} class="mt-0.5 shrink-0 text-faint" /><span class="line-clamp-2">{m.stem}</span></a></li>)}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <footer class="print-only print-foot">
         {sources.length > 0 && <><h2>Checked against</h2><ul>{sources.map((u) => <li>{u}</li>)}</ul></>}
@@ -145,6 +182,72 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
     toc();
     // onclick, not addEventListener: the topic and print pages both bind [data-print] after every swap.
     document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => { b.onclick = () => window.print(); });
+    learn();
+    selfTest();
+    speak();
+  }
+  function learn() {
+    const b = document.querySelector<HTMLButtonElement>('[data-learn]');
+    if (!b) return;
+    b.onclick = async () => {
+      const slug = b.dataset.learn!;
+      b.disabled = true;
+      const r = await fetch('/api/srs/learn', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ topic: slug }) }).catch(() => null);
+      if (r?.ok) location.assign(`/practice/cards?topic=${encodeURIComponent(slug)}`);
+      else { b.disabled = false; b.title = 'Could not add the cards. Try again.'; }
+    };
+  }
+  // Self-test: every point blurs; a tap (or Enter) reveals one.
+  function selfTest() {
+    const b = document.querySelector<HTMLButtonElement>('[data-selftest]');
+    const art = b?.closest('.reader');
+    if (!b || !art) return;
+    const points = [...art.querySelectorAll<HTMLElement>('.point')];
+    const reveal = (p: HTMLElement) => { p.classList.add('shown'); p.removeAttribute('tabindex'); p.removeAttribute('role'); };
+    b.onclick = () => {
+      const on = b.getAttribute('aria-pressed') !== 'true';
+      b.setAttribute('aria-pressed', String(on));
+      art.classList.toggle('selftest', on);
+      points.forEach((p) => {
+        p.classList.remove('shown');
+        if (on) { p.tabIndex = 0; p.setAttribute('role', 'button'); p.setAttribute('aria-label', 'Hidden point. Press to reveal.'); }
+        else { p.removeAttribute('tabindex'); p.removeAttribute('role'); p.removeAttribute('aria-label'); }
+      });
+    };
+    points.forEach((p) => {
+      p.onclick = (e) => { if (art.classList.contains('selftest') && !p.classList.contains('shown')) { e.preventDefault(); reveal(p); p.removeAttribute('aria-label'); } };
+      p.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && art.classList.contains('selftest') && !p.classList.contains('shown')) { e.preventDefault(); reveal(p); p.removeAttribute('aria-label'); } };
+    });
+  }
+  // Read aloud with the browser's own voice: title, then each point, highlighting the one being read.
+  function speak() {
+    const b = document.querySelector<HTMLButtonElement>('[data-speak]');
+    if (!b || !('speechSynthesis' in window)) return;
+    b.hidden = false;
+    const label = b.querySelector('[data-speak-label]');
+    const synth = window.speechSynthesis;
+    const stop = () => { synth.cancel(); b.setAttribute('aria-pressed', 'false'); if (label) label.textContent = 'Listen'; document.querySelectorAll('.point.reading').forEach((p) => p.classList.remove('reading')); };
+    b.onclick = () => {
+      if (b.getAttribute('aria-pressed') === 'true') return stop();
+      synth.cancel();
+      const voice = synth.getVoices().find((v) => /^en-(GB|IN|PK)/i.test(v.lang)) ?? synth.getVoices().find((v) => v.lang.startsWith('en'));
+      const parts: [string, HTMLElement | null][] = [[document.querySelector('.reader h1')?.textContent ?? '', null]];
+      document.querySelectorAll<HTMLElement>('.reader article section[id]:not(#quick-check)').forEach((s) => {
+        parts.push([s.querySelector('h2')?.textContent ?? '', null]);
+        s.querySelectorAll<HTMLElement>('.point').forEach((p) => parts.push([p.querySelector('p')?.textContent ?? '', p]));
+      });
+      parts.filter(([t]) => t.trim()).forEach(([t, el], i, all) => {
+        const u = new SpeechSynthesisUtterance(t);
+        if (voice) u.voice = voice;
+        u.rate = 0.95;
+        u.onstart = () => { document.querySelectorAll('.point.reading').forEach((p) => p.classList.remove('reading')); el?.classList.add('reading'); el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+        if (i === all.length - 1) u.onend = stop;
+        synth.speak(u);
+      });
+      b.setAttribute('aria-pressed', 'true');
+      if (label) label.textContent = 'Stop';
+    };
+    document.addEventListener('astro:before-swap', stop, { once: true });
   }
   init();
   document.addEventListener('astro:after-swap', init);
@@ -161,6 +264,19 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
   .toc-link.on { color: var(--accent); border-color: var(--accent); }
   .peer { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0; color: var(--muted); transition: color var(--d1); }
   .peer:hover { color: var(--accent); }
+  /* Self-test: points blur until tapped. */
+  .selftest .point:not(.shown) p { filter: blur(6px); user-select: none; transition: filter var(--d2); }
+  .selftest .point:not(.shown) { cursor: pointer; }
+  .selftest .point:not(.shown):hover p { filter: blur(4px); }
+  .selftest .point:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .point.reading { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+  .qc-card { border: 1px solid var(--line); border-radius: 12px; background: var(--sunk); }
+  .qc-card summary { display: flex; gap: 0.75rem; align-items: baseline; padding: 0.7rem 0.9rem; cursor: pointer; list-style: none; line-height: 1.5; }
+  .qc-card summary::-webkit-details-marker { display: none; }
+  .qc-card[open] :global(.chev) { transform: rotate(180deg); }
+  .qc-back { padding: 0 0.9rem 0.8rem 2.1rem; color: var(--ok); font-weight: 500; line-height: 1.5; }
+  .qc-q { display: flex; gap: 0.5rem; color: var(--muted); transition: color var(--d1); }
+  .qc-q:hover { color: var(--accent); }
   /* Reading progress: a hairline that fills along the topbar edge as the page scrolls. */
   .readbar { position: fixed; z-index: 16; top: calc(3.75rem - 2px); left: 0; right: 0; height: 2px; background: var(--accent); transform-origin: left; transform: scaleX(0); pointer-events: none; }
   /* Longhands on purpose: the CSS minifier folds `animation` + `animation-timeline` into one shorthand, which browsers reject. */

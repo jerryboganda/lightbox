@@ -61,16 +61,37 @@ const groups = [...new Set(items.map((i) => i.group))];
         name: 'lb-caption', order: 9, isButton: false, appendTo: 'root',
         onInit: (el, pswp) => {
           el.className = 'pswp-cap';
+          // Long captions clamp with More; the whole panel can fold away (C) so the image is unobscured. The fold choice persists.
+          let open = localStorage.getItem('lb-cap') !== '0';
+          const btn = (label: string, fn: () => void) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = fn; return b; };
+          const fold = () => {
+            open = !open;
+            localStorage.setItem('lb-cap', open ? '1' : '0');
+            el.classList.toggle('min', !open);
+            const t = el.querySelector<HTMLButtonElement>('[data-fold]');
+            if (t) { t.textContent = open ? 'Hide caption' : 'Show caption'; t.setAttribute('aria-expanded', String(open)); }
+          };
+          pswp.on('keydown', (e) => { const k = e.originalEvent.key; if ((k === 'c' || k === 'C') && !e.originalEvent.metaKey && !e.originalEvent.ctrlKey) { e.preventDefault(); fold(); } });
           pswp.on('change', () => {
             const a = pswp.currSlide?.data.element as HTMLElement | undefined;
             el.innerHTML = '';
+            el.classList.remove('more');
+            el.classList.toggle('min', !open);
             if (!a) return;
             const p = document.createElement('p'); p.textContent = a.querySelector('[data-caption]')?.textContent || 'No source caption';
             const s = document.createElement('span'); s.textContent = a.querySelector('[data-source]')?.textContent || '';
             // Same toggle as the tile; the shared marks script paints and handles it.
             const mark = a.parentElement?.querySelector('[data-mark]')?.cloneNode(true) as HTMLElement | undefined;
             if (mark) { mark.classList.add('pswp-mark'); mark.removeAttribute('title'); mark.insertAdjacentHTML('beforeend', '<span>Bookmark</span>'); }
-            el.append(...(mark ? [mark] : []), p, s);
+            const ctl = document.createElement('div'); ctl.className = 'cap-ctl';
+            const more: HTMLButtonElement = btn('More', () => { const on = el.classList.toggle('more'); more.textContent = on ? 'Less' : 'More'; more.setAttribute('aria-expanded', String(on)); });
+            more.setAttribute('aria-expanded', 'false');
+            more.hidden = true;
+            const f = btn(open ? 'Hide caption' : 'Show caption', fold);
+            f.dataset.fold = ''; f.setAttribute('aria-expanded', String(open)); f.title = 'Press C';
+            ctl.append(more, f);
+            el.append(...(mark ? [mark] : []), p, s, ctl);
+            requestAnimationFrame(() => { more.hidden = p.scrollHeight <= p.clientHeight + 1; });
           });
         },
       });
@@ -108,8 +129,16 @@ const groups = [...new Set(items.map((i) => i.group))];
   .masonry .tile:hover .cap, .masonry .tile:focus-visible .cap { opacity: 1; transform: none; }
   @media (hover: none) { .masonry .cap { opacity: 1; transform: none; } }
   .pswp-cap { position: absolute; left: 50%; bottom: 1.25rem; translate: -50% 0; width: min(46rem, calc(100% - 2rem)); max-height: 30vh; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 0.75rem; padding: 0.85rem 1.1rem; border-radius: 14px; background: rgb(11 15 20 / 0.82); backdrop-filter: blur(10px); border: 1px solid rgb(255 255 255 / 0.08); color: #e6edf3; font-size: 0.875rem; line-height: 1.55; }
-  .pswp-cap p { white-space: pre-line; grid-column: 1; }
+  .pswp-cap p { white-space: pre-line; grid-column: 1; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .pswp-cap.more p { display: block; -webkit-line-clamp: unset; }
   .pswp-cap > span { display: block; grid-column: 1; margin-top: 0.4rem; font-size: 0.75rem; color: #8b98a5; }
   .pswp-cap .pswp-mark { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+  .pswp-cap .cap-ctl { grid-column: 1 / -1; display: flex; gap: 1rem; margin-top: 0.45rem; }
+  .pswp-cap .cap-ctl button { font-size: 0.75rem; color: #67e8f9; }
+  .pswp-cap .cap-ctl button:hover { text-decoration: underline; }
+  .pswp-cap .cap-ctl button[hidden] { display: none; }
+  .pswp-cap.min { width: auto; padding: 0.4rem 0.85rem; }
+  .pswp-cap.min > :not(.cap-ctl), .pswp-cap.min .cap-ctl button:not([data-fold]) { display: none; }
+  .pswp-cap.min .cap-ctl { margin: 0; }
   .pswp { --pswp-bg: #05070a; }
 </style>

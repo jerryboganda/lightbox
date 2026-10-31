@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'motion/react';
 import { createEmptyCard, fsrs, Rating, type Card as FCard, type Grade } from 'ts-fsrs';
 import { get, set } from 'idb-keyval';
-import { CloudOff, ExternalLink, Flag, PenLine, RotateCcw, Sparkles } from 'lucide-react';
+import { CloudOff, ExternalLink, Flag, PenLine, RotateCcw, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import '../../scripts/marks';
 
 type Anki = { factId: string; front: string; back: string; sourceFile: string; page: number; evidence: string; own?: { factId: string | null; path: string | null } };
@@ -40,19 +40,25 @@ export default function Flashcards() {
   const load = useCallback(async () => {
     setQueue(null);
     await flush();
-    const [a, q] = await Promise.all([fetch('/api/data/anki').then((r) => r.json()), fetch('/api/srs/queue').then((r) => r.json())]);
+    const p = new URLSearchParams(location.search);
+    const qs = new URLSearchParams();
+    for (const k of ['topic', 'sys']) { const v = p.get(k); if (v) qs.set(k, v); }
+    const [a, q] = await Promise.all([fetch('/api/data/anki').then((r) => r.json()), fetch('/api/srs/queue' + (String(qs) ? '?' + qs : '')).then((r) => r.json())]);
     const d = new Map<string, Anki>(a.map((c: Anki) => [c.factId, c]));
     // The user's own cards ('U<id>') travel with the queue.
     for (const [id, c] of Object.entries((q.custom ?? {}) as Record<string, { front: string; back: string; factId: string | null; path: string | null }>))
       d.set(id, { factId: id, front: c.front, back: c.back, sourceFile: '', page: 0, evidence: '', own: { factId: c.factId, path: c.path } });
     setDeck(d);
     setRemainingNew(q.remainingNew);
-    const f = new URLSearchParams(location.search).get('focus');
+    const f = p.get('focus');
     setFocus(f && d.has(f) ? f : null);
-    const items: Item[] = [
-      ...q.due.map((x: any) => ({ factId: x.factId, card: revive(x.card), isNew: false })),
-      ...q.fresh.map((id: string) => ({ factId: id, card: createEmptyCard(new Date()), isNew: true })),
+    // Planner sessions: ?only=due|new and ?limit=N keep a session to the size the plan promised.
+    const only = p.get('only'), limit = Math.max(0, Math.min(500, Number(p.get('limit')) || 0));
+    let items: Item[] = [
+      ...(only === 'new' ? [] : q.due.map((x: any) => ({ factId: x.factId, card: revive(x.card), isNew: false }))),
+      ...(only === 'due' ? [] : q.fresh.map((id: string) => ({ factId: id, card: createEmptyCard(new Date()), isNew: true }))),
     ].filter((it) => d.has(it.factId));
+    if (limit) items = items.slice(0, limit);
     if (f && d.has(f)) {
       const k = items.findIndex((it) => it.factId === f);
       if (k > 0) items.unshift(items.splice(k, 1)[0]);
@@ -71,6 +77,30 @@ export default function Flashcards() {
 
   const cur = queue?.[0];
   const info = cur && deck.get(cur.factId);
+
+  // Read aloud: when on, each card's question is spoken, then its answer once shown.
+  const [canSpeak, setCanSpeak] = useState(false);
+  const [aloud, setAloud] = useState(false);
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    setCanSpeak(true);
+    setAloud(localStorage.getItem('lb-aloud') === '1');
+    return () => speechSynthesis.cancel();
+  }, []);
+  const say = info ? (flipped ? info.back : info.front) : '';
+  useEffect(() => {
+    if (!aloud || !say) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(say);
+    u.lang = 'en-GB';
+    speechSynthesis.speak(u);
+  }, [aloud, say, done.n]);
+  const toggleAloud = () => {
+    const on = !aloud;
+    setAloud(on);
+    localStorage.setItem('lb-aloud', on ? '1' : '0');
+    if (!on) speechSynthesis.cancel();
+  };
   const preview = useMemo(() => {
     if (!cur) return null;
     const now = new Date(), log = scheduler.repeat(cur.card, now);
@@ -134,6 +164,7 @@ export default function Flashcards() {
         {cur.isNew ? <span className="badge s-agreed">new</span> : <span className="badge s-neutral">review</span>}
         {/* Keyed per card: a fresh node gets painted by the marks script instead of keeping the last card's state. */}
         <button key={cur.factId} type="button" className="btn btn-sm btn-ghost mk !h-7 !px-1.5" data-mark="weak" data-type={info?.own ? 'card' : 'fact'} data-id={cur.factId} aria-pressed="false" aria-label={`Mark ${cur.factId} as a weak spot`} title="Mark as a weak spot"><Flag size={15} aria-hidden="true" /></button>
+        {canSpeak && <button type="button" className="btn btn-sm btn-ghost !h-7 !px-1.5" aria-pressed={aloud} onClick={toggleAloud} aria-label={aloud ? 'Stop reading cards aloud' : 'Read cards aloud'} title={aloud ? 'Stop reading aloud' : 'Read aloud'}>{aloud ? <Volume2 size={15} className="text-accent" aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}</button>}
         {pending > 0 && <span className="flex items-center gap-1 text-xs text-signal" title="Saved on this device; will sync"><CloudOff size={13} />{pending}</span>}
       </div>
       {focus === cur.factId && <p className="mt-3 flex items-center gap-1.5 text-xs text-accent"><Sparkles size={13} />Opened from a topic note</p>}

@@ -1,6 +1,8 @@
 import { createEmptyCard, fsrs, Rating, State, type Card as FCard, type Grade } from 'ts-fsrs';
 import { db, now } from './db';
 import { cardByFact, cards, facts, mcqs } from '../lib/data';
+import { topicFacts } from './analytics';
+import { trackMistake } from './mistakes';
 
 export const NEW_PER_DAY = 20;
 const TZ_MS = 5 * 3_600_000; // Pakistan time for "today" and streaks
@@ -18,14 +20,20 @@ const factSystem = new Map(facts.map((f) => [f.id, f.system]));
 // User-made cards are scheduled like fact cards under the id 'U<id>'. New ones come first and share the daily new limit.
 const userCardNum = (id: string) => (/^U[1-9]\d{0,12}$/.test(id) ? Number(id.slice(1)) : 0);
 
-export function srsQueue(userId: number) {
+/** Puts the items matching `first` ahead of the rest, keeping each group's order. */
+const lead = <T>(xs: T[], first: (x: T) => boolean) => [...xs.filter(first), ...xs.filter((x) => !first(x))];
+
+// focus.topic / focus.system put that topic's or system's cards first (planner and "Learn this topic" sessions).
+export function srsQueue(userId: number, focus: { topic?: string | null; system?: string | null } = {}) {
   const mine = db.prepare('SELECT id, front, back, fact_id factId, path FROM user_cards WHERE user_id = ? ORDER BY id').all(userId) as { id: number; front: string; back: string; factId: string | null; path: string | null }[];
   const own = new Map(mine.map((c) => [`U${c.id}`, c]));
-  const due = (db.prepare('SELECT fact_id, card FROM srs_cards WHERE user_id = ? AND due <= ? ORDER BY due LIMIT 300').all(userId, now()) as { fact_id: string; card: string }[])
-    .filter((r) => !r.fact_id.startsWith('U') || own.has(r.fact_id));
+  const inTopic = focus.topic ? new Set(topicFacts.get(focus.topic) ?? []) : null;
+  const wanted = (id: string) => (inTopic ? inTopic.has(id) : focus.system ? factSystem.get(id) === focus.system : false);
+  const due = lead((db.prepare('SELECT fact_id, card FROM srs_cards WHERE user_id = ? AND due <= ? ORDER BY due LIMIT 300').all(userId, now()) as { fact_id: string; card: string }[])
+    .filter((r) => !r.fact_id.startsWith('U') || own.has(r.fact_id)), (r) => wanted(r.fact_id));
   const introducedToday = (db.prepare('SELECT COUNT(*) n FROM srs_cards WHERE user_id = ? AND introduced >= ?').get(userId, dayStart()) as any).n;
   const seen = new Set((db.prepare('SELECT fact_id FROM srs_cards WHERE user_id = ?').all(userId) as any[]).map((r) => r.fact_id));
-  const unseen = [...[...own.keys()].filter((id) => !seen.has(id)), ...cards.filter((c) => !seen.has(c.factId)).map((c) => c.factId)];
+  const unseen = [...[...own.keys()].filter((id) => !seen.has(id)), ...lead(cards.filter((c) => !seen.has(c.factId)).map((c) => c.factId), wanted)];
   const fresh = unseen.slice(0, Math.max(0, NEW_PER_DAY - introducedToday));
   const custom = Object.fromEntries([...due.map((r) => r.fact_id), ...fresh].filter((id) => own.has(id)).map((id) => {
     const { front, back, factId, path } = own.get(id)!;
@@ -62,7 +70,27 @@ export function recordAttempt(userId: number, qid: string, choice: string, ms: n
   const correct = m.key ? (m.key === choice ? 1 : 0) : null;
   const t = ms === null || !Number.isFinite(ms) ? null : Math.max(0, Math.min(86_400_000, Math.round(ms)));
   db.prepare('INSERT INTO mcq_attempts (user_id, qid, choice, correct, created_at, ms, source) VALUES (?, ?, ?, ?, ?, ?, ?)').run(userId, qid, choice, correct, now(), t, source);
+  if (correct !== null) trackMistake(userId, qid, choice, correct as 0 | 1);
   return { correct, key: m.key };
+}
+
+/** Adds fact cards to the user's deck now, due immediately (deliberate learning: a topic, a page or highlights). */
+export function learnFacts(userId: number, ids: string[]) {
+  const seen = new Set((db.prepare('SELECT fact_id FROM srs_cards WHERE user_id = ?').all(userId) as { fact_id: string }[]).map((r) => r.fact_id));
+  const want = [...new Set(ids)].filter((id) => cardByFact.has(id));
+  const add = want.filter((id) => !seen.has(id)).slice(0, 200);
+  const t = now();
+  const ins = db.prepare('INSERT OR IGNORE INTO srs_cards (user_id, fact_id, card, due, introduced) VALUES (?, ?, ?, ?, ?)');
+  db.transaction(() => { for (const id of add) ins.run(userId, id, JSON.stringify(createEmptyCard(new Date(t))), t, t); })();
+  return { added: add.length, already: want.length - add.length, ids: want };
+}
+
+/** How many of these facts have a flashcard, and how many of those are already in the user's deck. */
+export function deckStatus(userId: number, ids: string[]) {
+  const withCard = [...new Set(ids)].filter((id) => cardByFact.has(id));
+  if (!withCard.length) return { cards: 0, inDeck: 0 };
+  const n = (db.prepare(`SELECT COUNT(*) n FROM srs_cards WHERE user_id = ? AND fact_id IN (${withCard.map(() => '?').join(',')})`).get(userId, ...withCard) as { n: number }).n;
+  return { cards: withCard.length, inDeck: n };
 }
 
 export function noteVisit(userId: number, kind: string, ref: string, title: string) {

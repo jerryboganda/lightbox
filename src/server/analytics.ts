@@ -73,8 +73,8 @@ export function recordSession(userId: number, b: any) {
 
 // ---- content maps (built once) ----
 const norm = (f: string) => f.replace(/__u\d+\.txt$/, '').replace(/\.\w+$/, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
-const topicFacts = new Map(topics.map((t) => [t.slug, [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))]]));
-const factTopics = new Map<string, string[]>();
+export const topicFacts = new Map(topics.map((t) => [t.slug, [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))]]));
+export const factTopics = new Map<string, string[]>();
 for (const [slug, ids] of topicFacts) for (const id of ids) factTopics.set(id, [...(factTopics.get(id) ?? []), slug]);
 const pageTopics = new Map<string, Set<string>>();
 for (const f of facts) {
@@ -82,8 +82,8 @@ for (const f of facts) {
   for (const s of factTopics.get(f.id) ?? []) (pageTopics.get(k) ?? pageTopics.set(k, new Set()).get(k)!).add(s);
 }
 // A wrong MCQ points at the topics whose facts come from the same paper page.
-const mcqTopics = new Map(mcqs.map((m) => [m.qid, [...(pageTopics.get(`${norm(m.file)}|${m.unit}`) ?? [])]]));
-const factSystem = new Map(facts.map((f) => [f.id, f.system]));
+export const mcqTopics = new Map(mcqs.map((m) => [m.qid, [...(pageTopics.get(`${norm(m.file)}|${m.unit}`) ?? [])]]));
+export const factSystem = new Map(facts.map((f) => [f.id, f.system]));
 
 export const SHORT: Record<string, string> = {
   neuro: 'Neuro', chest: 'Chest', abdomen: 'Abdomen', gu: 'GU', 'gyn-obs': 'Gyn/Obs', breast: 'Breast', msk: 'MSK', pediatrics: 'Paeds',
@@ -197,6 +197,13 @@ export function analytics(userId: number) {
     readiness: { score: readiness, parts },
     weak: weakTopics(userId, srs, quiz),
   };
+}
+
+/** Just the weak-topic list (last 90 days of answers), for the planner and Home without the full analytics pass. */
+export function weakOnly(userId: number) {
+  const srs = (db.prepare('SELECT fact_id, card FROM srs_cards WHERE user_id = ?').all(userId) as { fact_id: string; card: string }[])
+    .map((r) => ({ id: r.fact_id, c: JSON.parse(r.card) as FsrsJson }));
+  return weakTopics(userId, srs, answers(userId, now() - 90 * DAY).filter((a) => a.mode !== 'toacs'));
 }
 
 function weakTopics(userId: number, srs: { id: string; c: FsrsJson }[], quiz: Answer[]) {

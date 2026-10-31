@@ -7,6 +7,11 @@ import { db } from '../server/db';
 import { analytics, today } from '../server/analytics';
 import GoalRings from '../components/charts/GoalRings.astro';
 import Readiness from '../components/charts/Readiness.astro';
+import SmartToday from '../components/islands/SmartToday';
+import Onboarding from '../components/islands/Onboarding';
+import { plan } from '../server/planner';
+import { getProfile } from '../server/profile';
+import { mistakeCounts } from '../server/mistakes';
 
 const user = Astro.locals.user!;
 const d = dashboard(user.id);
@@ -39,9 +44,16 @@ const hasDue = d.dueNow + d.newToday > 0;
 const t = today(user.id), ready = analytics(user.id).readiness;
 const met = (['cards', 'mcqs', 'minutes'] as const).filter((k) => t.goals[k] > 0 && t.done[k] >= t.goals[k]).length;
 const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays} days` : t.examDays === 1 ? 'Exam tomorrow' : t.examDays === 0 ? 'Exam today' : null;
+const profile = getProfile(user.id);
+const setup = !profile.onboarded || Astro.url.searchParams.has('setup');
+const budget = [15, 30, 60].reduce((a, b) => (Math.abs(b - profile.minutes) < Math.abs(a - profile.minutes) ? b : a));
+const todayPlan = plan(user.id, budget);
+const mist = mistakeCounts(user.id);
+const systemList = systemOrder.map((s) => [s, SYSTEMS[s].label] as [string, string]);
 ---
 <App title="Home">
   {welcome && <div class="reveal mb-5 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 px-4 py-3 text-sm text-ok" role="status"><Icon name="CircleCheck" size={18} />Password saved. You're all set.</div>}
+  {setup && <Onboarding client:load systems={systemList} initial={{ examDate: t.goals.examDate, minutes: profile.minutes, confidence: profile.confidence }} again={profile.onboarded} />}
 
   <section class="hero reveal" style="--i:0">
     <div class="min-w-0">
@@ -49,6 +61,7 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
       <p class="mt-2 text-muted">
         {hasDue ? <><span class="num text-ink">{d.dueNow}</span> cards due and <span class="num text-ink">{d.newToday}</span> new today</> : 'Nothing due right now. Take a topic or an MCQ set.'}
         {d.streak > 0 && <> · <span class="text-signal"><span class="num">{d.streak}</span>-day streak</span></>}
+        {mist.due > 0 && <> · <a href="/practice/mcq?set=mistakes" class="text-bad hover:underline"><span class="num">{mist.due}</span> mistake{mist.due === 1 ? '' : 's'} to retry</a></>}
       </p>
       <div class="mt-5 flex flex-wrap gap-2.5">
         <a href="/practice/cards" class="btn btn-primary magnetic"><Icon name="Layers" size={17} />{hasDue ? 'Start review' : 'Learn new cards'}</a>
@@ -63,6 +76,8 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
       <figcaption class="mt-2 flex justify-between text-[11px] text-faint"><span>{quiet ? 'Activity shows here after your first review' : '14 days'}</span><span><span class="num text-muted">{d.reviewsToday}</span> reviews today</span></figcaption>
     </figure>
   </section>
+
+  <div class="reveal mt-6" style="--i:1"><SmartToday client:load initial={todayPlan} /></div>
 
   {announcements.length > 0 && (
     <section class="reveal mt-5 flex flex-col gap-2" style="--i:1" aria-label="Announcements">

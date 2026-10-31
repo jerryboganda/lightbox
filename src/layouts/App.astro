@@ -167,6 +167,18 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
   }
   bind();
   document.addEventListener('astro:after-swap', bind);
+  // Browser errors go to the admin Health tab (rate limited server-side; at most 5 per page load here).
+  if (!(window as any).lbErrBeacon) {
+    (window as any).lbErrBeacon = true;
+    let sent = 0;
+    const report = (message: string, stack?: string) => {
+      if (!message || sent++ >= 5 || /ResizeObserver loop|Script error\.?$/.test(message)) return;
+      const body = JSON.stringify({ message: message.slice(0, 300), stack: stack?.slice(0, 600), url: location.pathname });
+      try { navigator.sendBeacon?.('/api/client-error', new Blob([body], { type: 'application/json' })) || fetch('/api/client-error', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }); } catch {}
+    };
+    addEventListener('error', (e) => report(e.message, e.error?.stack));
+    addEventListener('unhandledrejection', (e) => { const r = e.reason; report(r instanceof Error ? r.message : String(r), r?.stack); });
+  }
 </script>
 
 <style is:global>

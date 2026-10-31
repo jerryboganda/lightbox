@@ -180,6 +180,7 @@ describe('my data', () => {
     expect(d.marks.length).toBe(3);
     expect(json).not.toContain('Their secret');
     expect(json).not.toMatch(/password|"sessions?"|x-other/i);
-    expect(Object.keys(d)).toEqual(['app', 'exportedAt', 'times', 'profile', 'goals', 'marks', 'collections', 'notes', 'highlights', 'cards', 'flashcardReviews', 'mcqAttempts', 'exams', 'studySessions', 'comments', 'votes', 'reports', 'pollVotes', 'aiChats']);
+    expect(Object.keys(d)).toEqual(['app', 'exportedAt', 'times', 'profile', 'goals', 'studyProfile', 'mistakes', 'marks', 'collections', 'notes', 'highlights', 'cards', 'flashcardReviews', 'mcqAttempts', 'exams', 'studySessions', 'comments', 'votes', 'reports', 'pollVotes', 'aiChats']);
+    expect(d.mistakes).toEqual(q.key && q.key !== Object.keys(q.options)[0] && Object.keys(q.options).length >= 2 ? [expect.objectContaining({ qid: q.qid, reason: 'wrong' })] : []);
   });
 });

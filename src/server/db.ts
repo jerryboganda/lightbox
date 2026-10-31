@@ -292,6 +292,42 @@ const MIGRATIONS = [
      created_at INTEGER NOT NULL
    );
    CREATE INDEX ai_mcqs_status ON ai_mcqs(status, created_at);`,
+  // v4: smart study. Onboarding profile (daily minutes, per-system confidence, desired retention), the mistake bank
+  // (wrong or guessed MCQs resurfacing on a spaced schedule) and a small ring buffer of warnings and errors.
+  `CREATE TABLE profiles (
+     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     minutes INTEGER NOT NULL DEFAULT 30,
+     confidence TEXT NOT NULL DEFAULT '{}',
+     retention REAL NOT NULL DEFAULT 0.9,
+     prefs TEXT NOT NULL DEFAULT '{}',
+     onboarded_at INTEGER,
+     updated_at INTEGER NOT NULL
+   );
+   CREATE TABLE mistakes (
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     qid TEXT NOT NULL,
+     choice TEXT,
+     reason TEXT NOT NULL DEFAULT 'wrong' CHECK (reason IN ('wrong','guess')),
+     step INTEGER NOT NULL DEFAULT 0,
+     misses INTEGER NOT NULL DEFAULT 1,
+     due INTEGER NOT NULL,
+     created_at INTEGER NOT NULL,
+     cleared_at INTEGER,
+     PRIMARY KEY (user_id, qid)
+   );
+   CREATE INDEX mistakes_due ON mistakes(user_id, cleared_at, due);
+   CREATE TABLE app_log (
+     id INTEGER PRIMARY KEY,
+     level TEXT NOT NULL CHECK (level IN ('info','warn','error')),
+     kind TEXT NOT NULL,
+     route TEXT NOT NULL DEFAULT '',
+     status INTEGER,
+     ms INTEGER,
+     message TEXT NOT NULL DEFAULT '',
+     user_id INTEGER,
+     at INTEGER NOT NULL
+   );
+   CREATE INDEX app_log_at ON app_log(at);`,
 ];
 
 function open() {

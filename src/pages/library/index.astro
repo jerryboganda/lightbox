@@ -204,6 +204,11 @@ const days = (tab === 'history' ? history(uid) : []).map((d) => {
     {tab === 'highlights' && (
       hlGroups.length ? (
         <div class="space-y-6">
+          <div class="reveal flex flex-wrap items-center justify-between gap-3" style="--i:2">
+            <p class="text-sm text-muted">Highlighting is not remembering. Turn every highlighted fact into a flashcard on a spaced schedule.</p>
+            <button type="button" class="btn btn-sm btn-primary" data-hl-learn><Icon name="Layers" size={15} />Turn highlights into flashcards</button>
+            <p class="w-full text-sm" data-hl-learn-msg role="status" hidden></p>
+          </div>
           {hlGroups.map(([path, list], gi) => (
             <section class="reveal" style={`--i:${Math.min(gi + 2, 10)}`} aria-label={titles.get(path)}>
               <h2 class="flex items-center gap-2 text-sm font-medium"><Icon name="FileText" size={15} class="text-faint" /><a href={path} class="min-w-0 truncate hover:text-accent">{titles.get(path)}</a><span class="num text-xs text-faint">{list.length}</span></h2>
@@ -337,6 +342,25 @@ const days = (tab === 'history' ? history(uid) : []).map((d) => {
 
 <script>
   import '../../scripts/library';
+  function hlLearn() {
+    const b = document.querySelector<HTMLButtonElement>('[data-hl-learn]'), msg = document.querySelector<HTMLElement>('[data-hl-learn-msg]');
+    if (!b || !msg) return;
+    b.onclick = async () => {
+      b.disabled = true;
+      const r = await fetch('/api/srs/learn', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: 'highlights' }) }).catch(() => null);
+      const j = await r?.json().catch(() => null);
+      msg.hidden = false;
+      b.disabled = false;
+      if (!r?.ok) { msg.className = 'w-full text-sm text-bad'; msg.textContent = j?.error ?? 'Could not add the cards. Try again.'; return; }
+      msg.className = 'w-full text-sm text-ok';
+      msg.textContent = j.added ? `Added ${j.added} flashcard${j.added === 1 ? '' : 's'}${j.already ? ` (${j.already} already in your deck)` : ''}. ` : `All ${j.total} are already in your deck. `;
+      const a = document.createElement('a');
+      a.href = '/practice/cards'; a.className = 'font-medium underline'; a.textContent = 'Review them now';
+      msg.append(a);
+    };
+  }
+  hlLearn();
+  document.addEventListener('astro:after-swap', hlLearn);
 </script>
 
 <style>

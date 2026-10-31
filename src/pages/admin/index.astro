@@ -5,6 +5,8 @@ import Overview from './_Overview.astro';
 import Audit from './_Audit.astro';
 import Announcements from './_Announcements.astro';
 import AiUsage from './_AiUsage.astro';
+import Health from './_Health.astro';
+import Gaps from './_Gaps.astro';
 import AdminUsers from '../../components/islands/admin/Users';
 import AdminReports from '../../components/islands/admin/Reports';
 import AdminComments from '../../components/islands/admin/Comments';
@@ -23,8 +25,10 @@ const TABS = [
   ['moderation', 'Moderation', 'ShieldAlert'],
   ['polls', 'Polls', 'ChartBarBig'],
   ['ai', 'AI review', 'Sparkles'],
+  ['gaps', 'Content gaps', 'Telescope'],
   ['announcements', 'Announcements', 'Megaphone'],
   ['audit', 'Audit log', 'ScrollText'],
+  ['health', 'Health', 'Activity'],
 ] as const;
 const tab = TABS.find(([k]) => k === p.get('tab'))?.[0] ?? 'overview';
 const counts: Record<string, number> = navCounts();
@@ -37,8 +41,10 @@ const BLURB: Record<string, string> = {
   moderation: 'Act on reports against the content, and keep discussions useful and kind.',
   polls: 'Ask the class a question and watch the answers come in.',
   ai: 'Check AI-drafted questions against their facts before anyone practises them.',
+  gaps: 'Where the class gets stuck and where the notes run out, so you know what to write next.',
   announcements: 'Short notices on everyone’s dashboard, with an optional notification.',
   audit: 'Every admin and moderation action, who did it and when.',
+  health: 'Errors, slow pages and server resources, so problems surface before students report them.',
 };
 
 // Moderation
@@ -143,6 +149,8 @@ const ac = tab === 'ai' ? aiCounts() : null;
 
     {tab === 'announcements' && <Announcements />}
     {tab === 'audit' && <Audit params={p} />}
+    {tab === 'gaps' && <Gaps />}
+    {tab === 'health' && <Health />}
   </div>
 </App>
 
