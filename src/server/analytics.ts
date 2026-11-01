@@ -190,38 +190,87 @@ export function analytics(userId: number) {
   ];
   const readiness = Math.round(100 * parts.reduce((s, p) => s + p.weight * (p.value ?? 0), 0));
 
+  // projection: coverage on exam day if new cards keep coming at the last 14 days' rate; other parts held as today
+  const examDays = daysUntil(getGoals(userId).examDate);
+  let projection: null | { examDays: number; rate: number; coverage: number; score: number; systems: { key: string; short: string; now: number; projected: number }[] } = null;
+  if (examDays !== null && examDays >= 0) {
+    const intro14 = (db.prepare("SELECT COUNT(*) n FROM srs_cards WHERE user_id = ? AND fact_id NOT LIKE 'U%' AND introduced >= ?").get(userId, t0 - 13 * DAY) as { n: number }).n;
+    const rate = intro14 / 14, remaining = cards.length - seenCorpus, added = Math.min(remaining, Math.round(rate * examDays));
+    const coverage = (seenCorpus + added) / cards.length;
+    const score = Math.round(100 * parts.reduce((s, p) => s + p.weight * ((p.key === 'coverage' ? coverage : p.value) ?? 0), 0));
+    projection = {
+      examDays, rate: Math.round(rate * 10) / 10, coverage, score,
+      systems: mastery.map((m) => ({ key: m.key, short: m.short, now: m.seen / m.total,
+        projected: Math.min(1, (m.seen + (remaining ? (added * (m.total - m.seen)) / remaining : 0)) / m.total) })),
+    };
+  }
+
   return {
     heatmap: { weeks, months, current, longest, active28, activeDays: hmActive },
     mastery, curve, dropping, below, reviewedCount: reviewed.length,
     trend, time, weekSeconds: sum(time.slice(7)), prevWeekSeconds: sum(time.slice(0, 7)),
-    readiness: { score: readiness, parts },
+    readiness: { score: readiness, parts, projection },
     weak: weakTopics(userId, srs, quiz),
+    calibration: calibration(userId),
   };
+}
+
+/** MCQ accuracy by how sure the student said they were (bank answers with a confidence, last 180 days). */
+export function calibration(userId: number) {
+  const rows = db.prepare(`SELECT confidence c, COUNT(*) n, SUM(correct = 1) r FROM mcq_attempts
+                           WHERE user_id = ? AND source = 'bank' AND confidence IS NOT NULL AND correct IS NOT NULL AND created_at >= ? GROUP BY confidence`)
+    .all(userId, now() - 180 * DAY) as { c: string; n: number; r: number }[];
+  const by = new Map(rows.map((x) => [x.c, x]));
+  const levels = (['sure', 'unsure', 'guess'] as const).map((k) => {
+    const x = by.get(k);
+    return { key: k, label: k === 'sure' ? 'Sure' : k === 'unsure' ? 'Unsure' : 'Guess', n: x?.n ?? 0, acc: x?.n ? x.r / x.n : null };
+  });
+  const sure = levels[0], total = levels.reduce((s, l) => s + l.n, 0);
+  const note = total < 10 ? `Tag at least 10 answers with how sure you were to see your calibration (${total} so far).`
+    : sure.acc !== null && sure.n >= 5 && sure.acc < 0.8 ? `When you feel sure you are right ${Math.round(sure.acc * 100)}% of the time. Slow down on "easy" questions.`
+    : levels[2].acc !== null && levels[2].n >= 5 && levels[2].acc > 0.6 ? 'Your guesses are mostly right. Trust your first instinct a bit more.'
+    : 'Your confidence matches your results well.';
+  return { levels, total, note };
 }
 
 /** Just the weak-topic list (last 90 days of answers), for the planner and Home without the full analytics pass. */
-export function weakOnly(userId: number) {
+export function weakOnly(userId: number, limit = 8) {
   const srs = (db.prepare('SELECT fact_id, card FROM srs_cards WHERE user_id = ?').all(userId) as { fact_id: string; card: string }[])
     .map((r) => ({ id: r.fact_id, c: JSON.parse(r.card) as FsrsJson }));
-  return weakTopics(userId, srs, answers(userId, now() - 90 * DAY).filter((a) => a.mode !== 'toacs'));
+  return weakTopics(userId, srs, answers(userId, now() - 90 * DAY).filter((a) => a.mode !== 'toacs'), limit);
 }
 
-function weakTopics(userId: number, srs: { id: string; c: FsrsJson }[], quiz: Answer[]) {
+/** The weakness evidence for one topic (null when there is none). */
+export const weakFor = (userId: number, slug: string) => weakOnly(userId, Infinity).find((w) => w.slug === slug) ?? null;
+
+/** Topics whose latest passed Fix-it check (2 of 3 or better) clears the evidence that came before it. */
+const fixedAt = (userId: number) => new Map((db.prepare(`SELECT json_extract(config, '$.fix') slug, MAX(finished_at) at FROM exams
+  WHERE user_id = ? AND mode = 'quiz' AND finished_at IS NOT NULL AND total > 0 AND score * 3 >= total * 2 AND json_extract(config, '$.fix') IS NOT NULL
+  GROUP BY slug`).all(userId) as { slug: string; at: number }[]).map((r) => [r.slug, r.at]));
+
+function weakTopics(userId: number, srs: { id: string; c: FsrsJson }[], quiz: Answer[], limit = 8) {
   const ev = new Map<string, { lapses: number; again: number; wrong: number; marked: number }>();
   const factScore = new Map<string, number>();
+  const fixed = fixedAt(userId);
+  const since = (slugs: Iterable<string> | undefined, t: number) => [...(slugs ?? [])].filter((s) => (fixed.get(s) ?? -1) < t);
   const bump = (slugs: Iterable<string> | undefined, k: 'lapses' | 'again' | 'wrong' | 'marked', n = 1) => {
     for (const s of slugs ?? []) { let e = ev.get(s); if (!e) ev.set(s, (e = { lapses: 0, again: 0, wrong: 0, marked: 0 })); e[k] += n; }
   };
-  for (const { id, c } of srs) if (c.lapses > 0) { bump(factTopics.get(id), 'lapses', c.lapses); factScore.set(id, (factScore.get(id) ?? 0) + 2 * c.lapses); }
-  for (const r of db.prepare('SELECT fact_id, COUNT(*) n FROM srs_log WHERE user_id = ? AND rating = 1 GROUP BY fact_id').all(userId) as { fact_id: string; n: number }[]) {
-    bump(factTopics.get(r.fact_id), 'again', r.n);
-    factScore.set(r.fact_id, (factScore.get(r.fact_id) ?? 0) + r.n);
+  for (const { id, c } of srs) if (c.lapses > 0) {
+    // After a fix, only a card that is lapsed right now counts again.
+    const t = c.state === State.Relearning && c.last_review ? Date.parse(c.last_review) : -Infinity;
+    bump([...(factTopics.get(id) ?? [])].filter((s) => !fixed.has(s) || fixed.get(s)! < t), 'lapses', c.lapses);
+    factScore.set(id, (factScore.get(id) ?? 0) + 2 * c.lapses);
   }
-  for (const a of quiz) if (a.correct === 0) bump(mcqTopics.get(a.qid), 'wrong');
-  for (const m of db.prepare("SELECT item_type, item_id FROM marks WHERE user_id = ? AND kind = 'weak'").all(userId) as { item_type: string; item_id: string }[]) {
-    bump(m.item_type === 'topic' ? (topicFacts.has(m.item_id) ? [m.item_id] : []) : m.item_type === 'mcq' ? mcqTopics.get(m.item_id) : factTopics.get(m.item_id), 'marked');
+  for (const r of db.prepare('SELECT fact_id, reviewed_at t FROM srs_log WHERE user_id = ? AND rating = 1').all(userId) as { fact_id: string; t: number }[]) {
+    bump(since(factTopics.get(r.fact_id), r.t), 'again');
+    factScore.set(r.fact_id, (factScore.get(r.fact_id) ?? 0) + 1);
   }
-  return [...ev].map(([slug, e]) => {
+  for (const a of quiz) if (a.correct === 0) bump(since(mcqTopics.get(a.qid), a.t), 'wrong');
+  for (const m of db.prepare("SELECT item_type, item_id, created_at t FROM marks WHERE user_id = ? AND kind = 'weak'").all(userId) as { item_type: string; item_id: string; t: number }[]) {
+    bump(since(m.item_type === 'topic' ? (topicFacts.has(m.item_id) ? [m.item_id] : []) : m.item_type === 'mcq' ? mcqTopics.get(m.item_id) : factTopics.get(m.item_id), m.t), 'marked');
+  }
+  return [...ev].filter(([, e]) => e.lapses + e.again + e.wrong + e.marked > 0).map(([slug, e]) => {
     const t = topicBySlug.get(slug)!;
     const reason = [
       e.lapses && plural(e.lapses, 'lapse'), e.again && plural(e.again, 'Again rating'), e.wrong && plural(e.wrong, 'wrong MCQ'),
@@ -230,5 +279,5 @@ function weakTopics(userId: number, srs: { id: string; c: FsrsJson }[], quiz: An
     const drill = (topicFacts.get(slug) ?? []).filter((id) => cardByFact.has(id)).sort((a, b) => (factScore.get(b) ?? 0) - (factScore.get(a) ?? 0))[0] ?? null;
     return { slug, title: t.title, system: t.system, systemLabel: SYSTEMS[t.system]?.label ?? t.system, href: `/study/${t.system}/${slug}`,
       score: 2 * e.lapses + e.again + 2 * e.wrong + 3 * e.marked, reason, drill };
-  }).sort((a, b) => b.score - a.score || a.title.localeCompare(b.title)).slice(0, 8);
+  }).sort((a, b) => b.score - a.score || a.title.localeCompare(b.title)).slice(0, limit);
 }

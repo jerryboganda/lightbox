@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'motion/react';
-import { createEmptyCard, fsrs, Rating, type Card as FCard, type Grade } from 'ts-fsrs';
+import { createEmptyCard, fsrs, Rating, type Card as FCard, type FSRS, type Grade } from 'ts-fsrs';
 import { get, set } from 'idb-keyval';
-import { CloudOff, ExternalLink, Flag, PenLine, RotateCcw, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, CloudOff, ExternalLink, Flag, MessageCircleQuestionMark, PenLine, RotateCcw, Sparkles, Volume2, VolumeX, Zap } from 'lucide-react';
 import '../../scripts/marks';
 
 type Anki = { factId: string; front: string; back: string; sourceFile: string; page: number; evidence: string; own?: { factId: string | null; path: string | null } };
-type Item = { factId: string; card: FCard; isNew: boolean };
+type Item = { factId: string; card: FCard; isNew: boolean; topic?: string };
 type Review = { factId: string; rating: Grade; reviewedAt: number; clientId: string };
 const OUTBOX = 'lb-srs-outbox';
-const scheduler = fsrs({ request_retention: 0.9, enable_fuzz: false });
+const makeScheduler = (r = 0.9) => fsrs({ request_retention: r, enable_fuzz: false });
 const RATINGS: [Grade, string, string, string][] = [[Rating.Again, 'Again', '1', 'bad'], [Rating.Hard, 'Hard', '2', 'signal'], [Rating.Good, 'Good', '3', 'accent'], [Rating.Easy, 'Easy', '4', 'ok']];
 const revive = (c: any): FCard => ({ ...c, due: new Date(c.due), last_review: c.last_review ? new Date(c.last_review) : undefined });
 const fmt = (ms: number) => { const m = ms / 60000; if (m < 60) return `${Math.max(1, Math.round(m))}m`; const h = m / 60; if (h < 24) return `${Math.round(h)}h`; const d = h / 24; if (d < 30) return `${Math.round(d)}d`; const mo = d / 30; return mo < 12 ? `${Math.round(mo)}mo` : `${(mo / 12).toFixed(1)}y`; };
@@ -32,6 +32,10 @@ export default function Flashcards() {
   const [pending, setPending] = useState(0);
   const [focus, setFocus] = useState<string | null>(null);
   const [remainingNew, setRemainingNew] = useState(0);
+  const [leech, setLeech] = useState(4);
+  const [pace, setPace] = useState<{ status: string; message: string } | null>(null);
+  const [back, setBack] = useState<string | null>(null);
+  const scheduler = useRef<FSRS>(makeScheduler());
   const x = useMotionValue(0);
   const tilt = useTransform(x, [-200, 200], [-8, 8]);
   const tint = useTransform(x, [-140, 0, 140], ['color-mix(in oklab, var(--bad) 22%, var(--panel))', 'var(--panel)', 'color-mix(in oklab, var(--ok) 22%, var(--panel))']);
@@ -50,12 +54,18 @@ export default function Flashcards() {
       d.set(id, { factId: id, front: c.front, back: c.back, sourceFile: '', page: 0, evidence: '', own: { factId: c.factId, path: c.path } });
     setDeck(d);
     setRemainingNew(q.remainingNew);
+    // Previews and in-session repeats follow the same desired retention as the server.
+    if (typeof q.retention === 'number') scheduler.current = makeScheduler(q.retention);
+    if (typeof q.leech === 'number') setLeech(q.leech);
+    setPace(q.pace ?? null);
+    const b = p.get('back');
+    setBack(b && b.startsWith('/') && !b.startsWith('//') ? b : null);
     const f = p.get('focus');
     setFocus(f && d.has(f) ? f : null);
     // Planner sessions: ?only=due|new and ?limit=N keep a session to the size the plan promised.
     const only = p.get('only'), limit = Math.max(0, Math.min(500, Number(p.get('limit')) || 0));
     let items: Item[] = [
-      ...(only === 'new' ? [] : q.due.map((x: any) => ({ factId: x.factId, card: revive(x.card), isNew: false }))),
+      ...(only === 'new' ? [] : q.due.map((x: any) => ({ factId: x.factId, card: revive(x.card), isNew: false, topic: x.topic }))),
       ...(only === 'due' ? [] : q.fresh.map((id: string) => ({ factId: id, card: createEmptyCard(new Date()), isNew: true }))),
     ].filter((it) => d.has(it.factId));
     if (limit) items = items.slice(0, limit);
@@ -103,14 +113,14 @@ export default function Flashcards() {
   };
   const preview = useMemo(() => {
     if (!cur) return null;
-    const now = new Date(), log = scheduler.repeat(cur.card, now);
+    const now = new Date(), log = scheduler.current.repeat(cur.card, now);
     return Object.fromEntries(RATINGS.map(([g]) => [g, fmt(log[g].card.due.getTime() - now.getTime())]));
   }, [cur]);
 
   const rate = useCallback(async (g: Grade) => {
     if (!cur || !flipped) return;
     const now = new Date();
-    const next = scheduler.next(cur.card, now, g).card;
+    const next = scheduler.current.next(cur.card, now, g).card;
     const review: Review = { factId: cur.factId, rating: g, reviewedAt: now.getTime(), clientId: crypto.randomUUID() };
     await set(OUTBOX, [...((await get(OUTBOX)) || []), review]);
     navigator.vibrate?.(8);
@@ -148,13 +158,15 @@ export default function Flashcards() {
         <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="28" fill="none" stroke="var(--line)" strokeWidth="4" /><motion.path d="M20 33l8 8 16-17" fill="none" stroke="var(--accent)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }} /></svg>
         <h2 className="text-xl font-medium">{done.n ? 'Session complete' : 'Nothing due right now'}</h2>
         <p className="max-w-sm text-sm text-muted">{done.n ? <>You reviewed <span className="num text-ink">{done.n}</span> cards in about {mins} min{done.again ? <>, and <span className="num">{done.again}</span> will come back sooner</> : ''}.</> : <>New cards unlock tomorrow ({remainingNew} left to learn). Due reviews appear here when their interval ends.</>}</p>
+        {pace && pace.status !== 'none' && <p className={`max-w-sm text-xs ${pace.status === 'behind' ? 'text-signal' : 'text-faint'}`}>{pace.message}</p>}
         {pending > 0 && <p className="flex items-center gap-1.5 text-xs text-signal"><CloudOff size={14} />{pending} reviews will sync when you're back online.</p>}
-        <div className="mt-2 flex gap-2"><a href="/practice/mcq" className="btn">Practise MCQs</a><button className="btn btn-ghost" onClick={load}><RotateCcw size={15} />Check again</button></div>
+        <div className="mt-2 flex gap-2">{back ? <a href={back} className="btn btn-primary"><ArrowLeft size={15} />Back to Fix-it</a> : <a href="/practice/mcq" className="btn">Practise MCQs</a>}<button className="btn btn-ghost" onClick={load}><RotateCcw size={15} />Check again</button></div>
       </motion.div>
     );
   }
 
   const total = done.n + queue.length;
+  const isLeech = !cur.isNew && cur.card.lapses >= leech;
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center gap-3 text-sm text-muted">
@@ -162,12 +174,21 @@ export default function Flashcards() {
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-sunk"><motion.div className="h-full rounded-full bg-accent" animate={{ width: `${(done.n / total) * 100}%` }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }} /></div>
         {info?.own && <span className="badge s-edition">your card</span>}
         {cur.isNew ? <span className="badge s-agreed">new</span> : <span className="badge s-neutral">review</span>}
+        {isLeech && <span className="badge s-disputed inline-flex items-center gap-1" title={`Forgotten ${cur.card.lapses} times. It is now on your weak spots.`}><Zap size={11} aria-hidden="true" />leech</span>}
         {/* Keyed per card: a fresh node gets painted by the marks script instead of keeping the last card's state. */}
         <button key={cur.factId} type="button" className="btn btn-sm btn-ghost mk !h-7 !px-1.5" data-mark="weak" data-type={info?.own ? 'card' : 'fact'} data-id={cur.factId} aria-pressed="false" aria-label={`Mark ${cur.factId} as a weak spot`} title="Mark as a weak spot"><Flag size={15} aria-hidden="true" /></button>
         {canSpeak && <button type="button" className="btn btn-sm btn-ghost !h-7 !px-1.5" aria-pressed={aloud} onClick={toggleAloud} aria-label={aloud ? 'Stop reading cards aloud' : 'Read cards aloud'} title={aloud ? 'Stop reading aloud' : 'Read aloud'}>{aloud ? <Volume2 size={15} className="text-accent" aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}</button>}
         {pending > 0 && <span className="flex items-center gap-1 text-xs text-signal" title="Saved on this device; will sync"><CloudOff size={13} />{pending}</span>}
       </div>
       {focus === cur.factId && <p className="mt-3 flex items-center gap-1.5 text-xs text-accent"><Sparkles size={13} />Opened from a topic note</p>}
+      {isLeech && flipped && (
+        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+          <span>Keeps slipping. Rebuild it from the source rather than drilling harder:</span>
+          <a href={`/facts/${info?.own?.factId ?? cur.factId}`} className="inline-flex items-center gap-1 text-accent hover:underline"><ExternalLink size={12} aria-hidden="true" />Open the fact</a>
+          {cur.topic && <a href={`/tutor?topic=${encodeURIComponent(cur.topic)}`} className="inline-flex items-center gap-1 text-accent hover:underline"><MessageCircleQuestionMark size={12} aria-hidden="true" />Ask the tutor</a>}
+          {cur.topic && <a href={`/fix/${encodeURIComponent(cur.topic)}`} className="inline-flex items-center gap-1 text-accent hover:underline"><Zap size={12} aria-hidden="true" />Fix this topic</a>}
+        </p>
+      )}
 
       <div className="relative mt-5" style={{ perspective: 1400 }}>
         <AnimatePresence mode="popLayout" initial={false}>

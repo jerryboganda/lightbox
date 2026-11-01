@@ -12,6 +12,8 @@ import Onboarding from '../components/islands/Onboarding';
 import { plan } from '../server/planner';
 import { getProfile } from '../server/profile';
 import { mistakeCounts } from '../server/mistakes';
+import { pacing } from '../server/pacing';
+import { examHref, recent } from '../server/exams';
 
 const user = Astro.locals.user!;
 const d = dashboard(user.id);
@@ -50,6 +52,17 @@ const budget = [15, 30, 60].reduce((a, b) => (Math.abs(b - profile.minutes) < Ma
 const todayPlan = plan(user.id, budget);
 const mist = mistakeCounts(user.id);
 const systemList = systemOrder.map((s) => [s, SYSTEMS[s].label] as [string, string]);
+const pace = pacing(user.id, t.examDays);
+// Continue: unfinished sessions first, then recent pages (with how far down a topic note you got).
+const open = recent(user.id, 10).filter((r) => !r.finished_at && !r.expired).slice(0, 2).map((r) => ({
+  href: examHref(r), title: r.title, icon: 'Play',
+  sub: `${r.mode === 'toacs' ? 'TOACS' : r.mode === 'exam' ? 'Timed exam' : 'Practice'} · ${r.answered} of ${r.n} answered`,
+}));
+const pages = d.recent.map((r) => ({
+  href: r.ref, title: r.title, icon: 'ArrowRight',
+  sub: r.kind === 'fact' ? 'Fact' : r.kind === 'source' ? 'Source page' : r.pos && r.pos > 0.05 && r.pos < 0.95 ? `Topic note · ${Math.round(r.pos * 100)}% read` : 'Topic note',
+}));
+const cont = [...open, ...pages].slice(0, 5);
 ---
 <App title="Home">
   {welcome && <div class="reveal mb-5 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 px-4 py-3 text-sm text-ok" role="status"><Icon name="CircleCheck" size={18} />Password saved. You're all set.</div>}
@@ -105,6 +118,8 @@ const systemList = systemOrder.map((s) => [s, SYSTEMS[s].label] as [string, stri
         <span class="tile-link group-hover:text-accent">{exam ?? 'Analytics'}<Icon name="ArrowUpRight" size={15} /></span>
       </header>
       <div class="mt-4"><Readiness score={ready.score} parts={ready.parts} compact /></div>
+      {ready.projection && <p class="mt-3 text-xs text-muted"><Icon name="TrendingUp" size={13} class="mr-1 inline-block align-[-2px] text-accent" />At your current pace: about <span class="num text-ink">{ready.projection.score}</span>/100 by exam day.</p>}
+      {pace.status !== 'done' && <p class:list={['mt-1 text-xs', pace.status === 'behind' ? 'text-signal' : 'text-faint']}>{pace.message}</p>}
     </a>
 
     <section class="panel tile col-a reveal" style="--i:4">
@@ -168,13 +183,13 @@ const systemList = systemOrder.map((s) => [s, SYSTEMS[s].label] as [string, stri
     </section>
 
     <section class="panel tile col-e reveal" style="--i:8">
-      <header class="tile-h"><h2>{d.recent.length ? 'Continue where you left off' : 'Start here'}</h2></header>
+      <header class="tile-h"><h2>{cont.length ? 'Continue where you left off' : 'Start here'}</h2></header>
       <ul class="mt-2 divide-y divide-line">
-        {(d.recent.length ? d.recent.map((r) => ({ href: r.ref, title: r.title, sub: r.kind === 'fact' ? 'Fact' : r.kind === 'source' ? 'Source page' : 'Topic note' })) : [
-          { href: '/study/physics', title: 'Physics and safety', sub: `${facts.filter((f) => f.system === 'physics').length} facts, the biggest system` },
-          { href: '/practice/cards', title: 'Your first flashcards', sub: '20 new cards a day, spaced by FSRS' },
-          { href: '/review', title: 'What the papers got wrong', sub: 'Disputed keys and corrected figures' },
-        ]).map((r) => <li><a href={r.href} class="group flex items-center gap-3 py-2.5"><span class="min-w-0 flex-1"><span class="block truncate text-sm group-hover:text-accent transition-colors">{r.title}</span><span class="block truncate text-xs text-faint">{r.sub}</span></span><Icon name="ArrowRight" size={16} class="text-faint transition-transform group-hover:translate-x-0.5" /></a></li>)}
+        {(cont.length ? cont : [
+          { href: '/study/physics', title: 'Physics and safety', sub: `${facts.filter((f) => f.system === 'physics').length} facts, the biggest system`, icon: 'ArrowRight' },
+          { href: '/practice/cards', title: 'Your first flashcards', sub: 'New cards each day, paced to your exam date by FSRS', icon: 'ArrowRight' },
+          { href: '/review', title: 'What the papers got wrong', sub: 'Disputed keys and corrected figures', icon: 'ArrowRight' },
+        ]).map((r) => <li><a href={r.href} class="group flex items-center gap-3 py-2.5"><span class="min-w-0 flex-1"><span class="block truncate text-sm group-hover:text-accent transition-colors">{r.title}</span><span class="block truncate text-xs text-faint">{r.sub}</span></span><Icon name={r.icon} size={16} class="text-faint transition-transform group-hover:translate-x-0.5" /></a></li>)}
       </ul>
     </section>
   </div>

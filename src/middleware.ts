@@ -2,6 +2,7 @@ import { defineMiddleware } from 'astro:middleware';
 import { bootstrapAdmin, COOKIE, readSession } from './server/auth';
 import { db, now } from './server/db';
 import { errorText, log, observe } from './server/log';
+import { startReminders } from './server/push';
 
 const PUBLIC = [/^\/login$/, /^\/api\/auth\/login$/, /^\/api\/health$/, /^\/_astro\//, /^\/(favicon|manifest|sw\.js|icons\/|offline)/];
 const MUST_CHANGE_OK = [/^\/account/, /^\/api\/auth\//];
@@ -18,7 +19,7 @@ let booted: Promise<void> | null = null;
 const lastSeen = new Map<number, number>();
 
 export const onRequest = defineMiddleware(async (ctx, next) => {
-  booted ??= bootstrapAdmin();
+  if (!booted) { booted = bootstrapAdmin(); startReminders(); }
   await booted;
   const path = ctx.url.pathname;
   const user = readSession(ctx.cookies.get(COOKIE)?.value);

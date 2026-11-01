@@ -10,9 +10,15 @@ import TimeBars from '../components/charts/TimeBars.astro';
 import ForgettingCurve from '../components/charts/ForgettingCurve.astro';
 import Readiness from '../components/charts/Readiness.astro';
 import { analytics, hm, today } from '../server/analytics';
+import { pacing } from '../server/pacing';
 
 const uid = Astro.locals.user!.id;
 const a = analytics(uid), t = today(uid);
+const pace = pacing(uid, t.examDays);
+const proj = a.readiness.projection;
+const behindSys = proj ? [...proj.systems].sort((x, y) => x.projected - y.projected).slice(0, 3) : [];
+const cal = a.calibration;
+const calTake = cal.note;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
 const short = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -80,6 +86,17 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
           : <button type="button" class="btn btn-sm btn-ghost" data-timer="goals"><Icon name="CalendarPlus" size={15} />Set exam date</button>}
       </Fragment>
       <Readiness score={a.readiness.score} parts={a.readiness.parts} />
+      {proj && (
+        <div class="an-proj">
+          <p><Icon name="TrendingUp" size={15} /><span>On exam day, at your current pace (<span class="num">{proj.rate}</span> new cards a day): <b class="num">{proj.score}</b>/100 with <b class="num">{pct(proj.coverage)}</b> of the deck started.</span></p>
+          {pace.status !== 'none' && <p class:list={['an-pace', { 'text-signal': pace.status === 'behind' }]}>{pace.message}</p>}
+          {behindSys.length > 0 && proj.coverage < 1 && (
+            <ul class="an-proj-sys" aria-label="Systems furthest from finished on exam day">
+              {behindSys.map((s) => <li><span>{s.short}</span><span class="an-bar" aria-hidden="true"><i style={`--w:${s.now}`}></i><b style={`--w:${s.projected}`}></b></span><span class="num">{pct(s.now)} → {pct(s.projected)}</span></li>)}
+            </ul>
+          )}
+        </div>
+      )}
       <details class="an-how" slot="foot">
         <summary><Icon name="Info" size={15} />How this is calculated</summary>
         <div class="an-how-body">
@@ -91,6 +108,7 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
             <li><b>Consistency</b>: days with any study in the last 14.</li>
           </ul>
           <p>A part without enough evidence counts as zero. This measures study habits, not your exam result.</p>
+          <p>The exam-day projection keeps retention, accuracy and consistency as they are today and grows coverage at the rate you have added new cards over the last 14 days.</p>
         </div>
       </details>
     </ChartCard>
@@ -126,6 +144,7 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
                 <span class="wk-meter" aria-hidden="true"><span style={`--w:${w.score / maxWeak}`}></span></span>
               </div>
               <div class="wk-cta">
+                <a href={`/fix/${w.slug}`} class="btn btn-sm btn-primary" aria-label={`Fix it: ${w.title}`}><Icon name="Wrench" size={15} /><span class="wk-cta-t">Fix it</span></a>
                 <a href={w.href} class="btn btn-sm btn-ghost" aria-label={`Open topic: ${w.title}`}><Icon name="BookOpenText" size={15} /><span class="wk-cta-t">Open</span></a>
                 {w.drill && <a href={`/practice/cards?focus=${encodeURIComponent(w.drill)}`} class="btn btn-sm" aria-label={`Drill cards: ${w.title}`}><Icon name="Layers" size={15} /><span class="wk-cta-t">Drill</span></a>}
               </div>
@@ -188,6 +207,25 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
         <tbody>{a.time.map((d) => <tr><td>{long(d.day)}</td><td>{Math.round(d.focus / 60)}</td><td>{Math.round(d.mcq / 60)}</td><td>{Math.round(d.exam / 60)}</td><td>{Math.round((d.focus + d.mcq + d.exam) / 60)}</td></tr>)}</tbody>
       </table>
     </ChartCard>
+
+    <ChartCard id="calibration" title="Confidence calibration" takeaway={calTake} class="c-cal" i={8}
+      empty={cal.total ? null : { icon: 'Gauge', text: 'Tap Sure, Unsure or Guess before checking an MCQ to see how well your confidence matches your results.', cta: 'Practise MCQs', href: '/practice/mcq' }}>
+      <ul class="cal">
+        {cal.levels.map((l) => (
+          <li>
+            <span class="cal-l">{l.label}</span>
+            <span class="cal-bar" aria-hidden="true"><i style={`--w:${l.acc ?? 0}`}></i></span>
+            <span class="num cal-v">{l.acc === null ? 'none' : pct(l.acc)}</span>
+            <span class="cal-n">{l.n} answer{l.n === 1 ? '' : 's'}</span>
+          </li>
+        ))}
+      </ul>
+      <table slot="table">
+        <caption>MCQ accuracy by how sure you were</caption>
+        <thead><tr><th>Confidence</th><th>Answers</th><th>Accuracy</th></tr></thead>
+        <tbody>{cal.levels.map((l) => <tr><td>{l.label}</td><td>{l.n}</td><td>{l.acc === null ? 'none' : pct(l.acc)}</td></tr>)}</tbody>
+      </table>
+    </ChartCard>
   </div>
 </App>
 
@@ -205,6 +243,25 @@ const exam = t.examDays === null ? null : t.examDays > 1 ? `Exam in ${t.examDays
   .an-grid > :global(.c-weak) { grid-column: span 12; }
   .an-grid > :global(.c-forget) { grid-column: span 7; } .an-grid > :global(.c-radar) { grid-column: span 5; }
   .an-grid > :global(.c-acc), .an-grid > :global(.c-time) { grid-column: span 6; }
+  .an-grid > :global(.c-cal) { grid-column: span 12; }
+  .an-proj { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.85rem; display: grid; gap: 0.5rem; font-size: 0.8125rem; color: var(--muted); }
+  .an-proj > p:first-child { display: flex; gap: 0.5rem; align-items: flex-start; }
+  .an-proj > p:first-child :global(svg) { flex: none; margin-top: 0.15rem; color: var(--accent); }
+  .an-proj b { color: var(--ink); font-weight: 500; }
+  .an-pace { font-size: 0.75rem; }
+  .an-proj-sys { display: grid; gap: 0.35rem; font-size: 0.75rem; }
+  .an-proj-sys li { display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center; gap: 0.6rem; }
+  .an-bar { position: relative; height: 0.3rem; border-radius: 99px; background: var(--sunk); overflow: hidden; }
+  .an-bar > * { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--w)); border-radius: inherit; }
+  .an-bar b { background: color-mix(in oklab, var(--accent) 35%, transparent); }
+  .an-bar i { background: var(--accent); z-index: 1; }
+  .cal { display: grid; gap: 0.7rem; max-width: 40rem; }
+  .cal li { display: grid; grid-template-columns: 4.5rem 1fr 3rem 6rem; align-items: center; gap: 0.8rem; font-size: 0.8125rem; }
+  .cal-l { color: var(--ink); }
+  .cal-bar { height: 0.45rem; border-radius: 99px; background: var(--sunk); overflow: hidden; }
+  .cal-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; transform: scaleX(var(--w)); }
+  .cal-v { text-align: right; }
+  .cal-n { color: var(--muted); font-size: 0.75rem; }
   @media (max-width: 1100px) { .an-grid > :global(:is(.c-ready, .c-heat)) { grid-column: span 12; } }
   @media (max-width: 860px) { .an-grid { display: flex; flex-direction: column; } }
 

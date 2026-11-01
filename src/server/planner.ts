@@ -99,13 +99,14 @@ export function plan(uid: number, minutes: number): Plan {
       break;
     }
   }
-  // 5. one topic to read: the weakest, else one not opened yet in the focus system
+  // 5. one topic: Fix-it on the weakest, else one not opened yet in the focus system
   if (left >= 4) {
     const visited = new Set((db.prepare("SELECT ref FROM visits WHERE user_id = ? AND kind = 'topic'").all(uid) as { ref: string }[]).map((r) => r.ref));
     const w = weak[0];
     const fresh = topics.find((t) => t.system === sys && !visited.has(`/study/${t.system}/${t.slug}`));
-    const pick = w ? { href: w.href, title: w.title, detail: `Weak spot: ${w.reason}.` } : fresh ? { href: `/study/${fresh.system}/${fresh.slug}`, title: fresh.title, detail: 'Not opened yet. Try the quick check at the end.' } : null;
-    if (pick) { const t = take(m >= 60 ? 10 : 6); steps.push({ id: 'read', kind: 'read', minutes: t, title: `Read: ${pick.title}`, href: pick.href, detail: pick.detail }); }
+    const pick = w ? { href: `/fix/${w.slug}`, title: `Fix: ${w.title}`, detail: `Weak spot: ${w.reason}. Key points, 10 cards, then 3 questions.` }
+      : fresh ? { href: `/study/${fresh.system}/${fresh.slug}`, title: `Read: ${fresh.title}`, detail: 'Not opened yet. Try the quick check at the end.' } : null;
+    if (pick) { const t = take(m >= 60 ? 10 : 6); steps.push({ id: 'read', kind: 'read', minutes: t, title: pick.title, href: pick.href, detail: pick.detail }); }
   }
   // 6. image stations for longer sessions or when the exam is near
   if (left >= 8 && (m >= 60 || (examDays !== null && examDays >= 0 && examDays <= 30))) {

@@ -7,6 +7,8 @@ import Thread from './Thread';
 
 type Mcq = { qid: string; paper: string; stem: string; options: Record<string, string>; key: string; keyEvidence: string; myAnswer: string; confidence: string; reason: string; verdict: string; evidence: string; note: string; notBlind: boolean; notBlindReason: string; file: string; unit: number };
 type Attempt = { qid: string; choice: string; correct: number | null };
+type Conf = 'sure' | 'unsure' | 'guess';
+const CONF: [Conf, string][] = [['sure', 'Sure'], ['unsure', 'Unsure'], ['guess', 'Guess']];
 const SETS = [['all', 'All'], ['keyed', 'With answer key'], ['mistakes', 'Mistakes due'], ['disputed', 'Disputed'], ['unanswered', 'Not answered yet'], ['wrong', 'Got wrong']] as const;
 
 export default function McqPlayer() {
@@ -21,6 +23,7 @@ export default function McqPlayer() {
   const [seed, setSeed] = useState(1);
   const [i, setI] = useState(0);
   const [pick, setPick] = useState<string | null>(null);
+  const [conf, setConf] = useState<Conf | null>(null);
   const [checked, setChecked] = useState(false);
   const [dir, setDir] = useState(1);
   const [err, setErr] = useState('');
@@ -60,7 +63,7 @@ export default function McqPlayer() {
   const m = list[Math.min(i, list.length - 1)];
   const prior = m && hist.get(m.qid);
 
-  useEffect(() => { setPick(null); setChecked(false); setErr(''); shownAt.current = performance.now(); }, [m?.qid]);
+  useEffect(() => { setPick(null); setConf(null); setChecked(false); setErr(''); shownAt.current = performance.now(); }, [m?.qid]);
   // ?q=<qid> deep link: open that question once the full list is in place.
   useEffect(() => {
     const k = want.current ? list.findIndex((x) => x.qid === want.current) : -1;
@@ -74,12 +77,12 @@ export default function McqPlayer() {
     if (!m) return;
     if (!pick) { setErr('Choose an option first.'); return; }
     setChecked(true);
-    const r = await fetch('/api/mcq/attempt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ qid: m.qid, choice: pick, ms: Math.round(performance.now() - shownAt.current) }) }).then((x) => x.json()).catch(() => null);
+    const r = await fetch('/api/mcq/attempt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ qid: m.qid, choice: pick, ms: Math.round(performance.now() - shownAt.current), confidence: conf }) }).then((x) => x.json()).catch(() => null);
     if (r && 'correct' in r) {
       setHist((h) => new Map(h).set(m.qid, { qid: m.qid, choice: pick, correct: r.correct }));
       if (r.correct === 1) navigator.vibrate?.(12); else if (r.correct === 0) navigator.vibrate?.([20, 40, 20]);
     }
-  }, [m, pick]);
+  }, [m, pick, conf]);
 
   const dismiss = useCallback(async (qid: string) => {
     const r = await fetch(`/api/mistakes?qid=${encodeURIComponent(qid)}`, { method: 'DELETE' }).catch(() => null);
@@ -153,6 +156,15 @@ export default function McqPlayer() {
               })}
             </div>
             {err && <p role="alert" className="mt-3 text-sm text-bad">{err}</p>}
+            {!checked && m.key && (
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span id={`conf-${m.qid}`}>How sure are you?</span>
+                <div className="seg !h-8 text-xs" role="radiogroup" aria-labelledby={`conf-${m.qid}`}>
+                  {CONF.map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={conf === v} onClick={() => setConf((c) => (c === v ? null : v))}>{l}</button>)}
+                </div>
+                <span className="text-faint">Optional. Guesses come back even when right.</span>
+              </div>
+            )}
 
             <AnimatePresence>
               {checked && (
@@ -168,6 +180,8 @@ export default function McqPlayer() {
                   {m.notBlind && <p className="flex gap-2 text-xs text-faint"><Info size={14} className="mt-0.5 shrink-0" />{m.notBlindReason}</p>}
                   {m.key && pick && pick !== m.key && Object.hasOwn(m.options, m.key) && <AiMistake key={`${m.qid}-${pick}`} qid={m.qid} choice={pick} keyLetter={m.key} />}
                   {m.key && pick && pick !== m.key && <p className="text-xs text-faint">Added to your mistakes. It comes back tomorrow, then after 3, 7 and 21 days.</p>}
+                  {m.key && pick === m.key && conf === 'guess' && <p className="text-xs text-signal">Right, but a guess. It joins your mistakes so it comes back until you know it.</p>}
+                  {m.key && pick && pick !== m.key && conf === 'sure' && <p className="text-xs text-signal">You were sure. Confident errors stick, so read the explanation closely.</p>}
                   {set === 'mistakes' && pick === m.key && !dismissed.has(m.qid) && (
                     <button type="button" className="btn btn-sm btn-ghost" onClick={() => dismiss(m.qid)}><ThumbsUp size={14} />I've got this, stop showing it</button>
                   )}

@@ -328,6 +328,20 @@ const MIGRATIONS = [
      at INTEGER NOT NULL
    );
    CREATE INDEX app_log_at ON app_log(at);`,
+  // v5: smarter engine. How sure the student was on each MCQ answer (calibration; guesses join the mistake bank),
+  // where they stopped reading a topic (0..1 scroll fraction) and Web Push subscriptions for reminders.
+  `ALTER TABLE mcq_attempts ADD COLUMN confidence TEXT CHECK (confidence IN ('sure','unsure','guess'));
+   ALTER TABLE visits ADD COLUMN pos REAL;
+   CREATE TABLE push_subs (
+     endpoint TEXT PRIMARY KEY,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     p256dh TEXT NOT NULL,
+     auth TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     last_sent_at INTEGER,
+     fails INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE INDEX push_subs_user ON push_subs(user_id);`,
 ];
 
 function open() {

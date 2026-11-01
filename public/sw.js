@@ -24,6 +24,27 @@ const fromNetwork = async (req, cacheName, ms) => {
   return ms ? Promise.race([net, new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), ms))]) : net;
 };
 
+// Pushes arrive empty; ask the server what to say (signed out or offline: a plain nudge).
+self.addEventListener('push', (e) => {
+  e.waitUntil((async () => {
+    let n = { title: 'Lightbox', body: 'Time for today\'s study.', url: '/' };
+    try { const r = await fetch('/api/push/summary', { cache: 'no-store' }); if (r.ok) n = { ...n, ...(await r.json()) }; } catch {}
+    await self.registration.showNotification(n.title, { body: n.body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: 'lb-reminder', renotify: true, data: { url: n.url } });
+  })());
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '/', location.origin);
+  if (url.origin !== location.origin) return;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (cs) => {
+    const c = cs.find((w) => w.url.startsWith(location.origin));
+    if (!c) return self.clients.openWindow(url.href);
+    await c.focus();
+    return c.navigate(url.href).catch(() => {});
+  }));
+});
+
 self.addEventListener('fetch', (e) => {
   const req = e.request, url = new URL(req.url), p = url.pathname;
   if (req.method !== 'GET' || url.origin !== location.origin) return;

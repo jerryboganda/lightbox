@@ -1,6 +1,8 @@
 ---
 import App from '../layouts/App.astro';
 import Icon from '../components/Icon.astro';
+import { getProfile, RETENTION } from '../server/profile';
+import { pushCount, vapid } from '../server/push';
 const user = Astro.locals.user!;
 const p = Astro.url.searchParams;
 const first = p.get('first') === '1' || user.mustChange;
@@ -16,6 +18,11 @@ const prefLabels: Record<string, [string, string]> = {
   'lb-motion': ['Motion', 'Reduced keeps fades and feedback but removes movement.'],
   'lb-density': ['Density', 'Compact fits more rows in lists and tables.'],
 };
+const prof = getProfile(user.id);
+const pushKey = vapid()?.pub ?? '';
+const reminding = !!pushKey && typeof prof.prefs.remindAt === 'number' && pushCount(user.id) > 0;
+const remindAt = prof.prefs.remindAt ?? 19 * 60;
+const hhmm = `${String(Math.floor(remindAt / 60)).padStart(2, '0')}:${String(remindAt % 60).padStart(2, '0')}`;
 ---
 <App title="Account">
   <div class="mx-auto max-w-3xl">
@@ -51,7 +58,34 @@ const prefLabels: Record<string, [string, string]> = {
           </form>
         </section>
 
-        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:3">
+        <section id="study" class="reveal panel mt-5 p-5 sm:p-6" style="--i:3">
+          <h2 class="font-medium">Study settings</h2>
+          <p class="mt-1 text-sm text-muted">Saved to your account, so every device uses them.</p>
+          <div class="mt-5 divide-y divide-line">
+            <div class="py-4 first:pt-0 last:pb-0">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div><div class="text-sm font-medium" id="ret-label">How much to remember</div><div class="text-xs text-muted">Target recall for flashcards. Higher means more reviews. In the last 14 days before your exam it rises to at least 93%.</div></div>
+                <div class="flex items-center gap-3"><input type="range" min={RETENTION.min * 100} max={RETENTION.max * 100} step="1" value={Math.round(prof.retention * 100)} data-ret class="w-40" aria-labelledby="ret-label" /><span class="num w-12 text-sm text-muted" data-ret-out>{Math.round(prof.retention * 100)}%</span></div>
+              </div>
+              <p class="mt-2 text-xs text-muted" data-ret-hint aria-live="polite"></p>
+            </div>
+            {pushKey && (
+              <div class="py-4 last:pb-0" data-push data-key={pushKey} data-on={reminding ? '1' : ''}>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div><div class="text-sm font-medium">Daily reminder</div><div class="text-xs text-muted">One notification a day with your due cards and mistakes. Skipped once you've cleared them.</div></div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <input type="time" class="field w-32" value={hhmm} step="900" data-remind-at aria-label="Reminder time, Pakistan time" />
+                    <button type="button" class="btn" data-push-toggle>{reminding ? 'Turn off' : 'Turn on'}</button>
+                    <button type="button" class="btn" data-push-test hidden={!reminding}>Send a test</button>
+                  </div>
+                </div>
+                <p class="mt-2 text-xs text-muted" data-push-msg role="status"></p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:4">
           <h2 class="font-medium">Preferences</h2>
           <p class="mt-1 text-sm text-muted">Saved on this device.</p>
           <div class="mt-5 divide-y divide-line">
@@ -70,7 +104,7 @@ const prefLabels: Record<string, [string, string]> = {
           </div>
         </section>
 
-        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:4" aria-labelledby="mydata-h">
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:5" aria-labelledby="mydata-h">
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex gap-4">
               <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="DatabaseBackup" size={20} /></span>
@@ -104,6 +138,82 @@ const prefLabels: Record<string, [string, string]> = {
       r.value = get('lb-fs', '100'); out.textContent = r.value + '%';
       r.addEventListener('input', () => { out.textContent = r.value + '%'; set('lb-fs', r.value); });
     }
+    retention();
+    reminders();
+  }
+
+  const post = (url: string, body: unknown, method = 'POST') =>
+    fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const errorOf = async (r: Response, d: string) => ((await r.json().catch(() => null)) as { error?: string } | null)?.error || d;
+
+  // FSRS-6: interval ∝ R^(-1/decay) - 1, so daily reviews scale roughly with its inverse (relative to 90%).
+  const load = (r: number) => { const e = -1 / 0.1542; return (0.9 ** e - 1) / (r ** e - 1); };
+  function retention() {
+    const r = document.querySelector<HTMLInputElement>('[data-ret]'), out = document.querySelector('[data-ret-out]'), hint = document.querySelector('[data-ret-hint]');
+    if (!r || !out || !hint) return;
+    const show = (note = '') => {
+      const v = Number(r.value), x = load(v / 100);
+      out.textContent = `${v}%`;
+      const kind = v <= 85 ? 'Lighter: you will forget more, fine for a busy week.' : v <= 92 ? 'Balanced: 90% suits most students.' : 'Exam mode: many more reviews for a few points of recall.';
+      const amount = x < 0.95 ? ` About ${Math.round(x * 100)}% of the reviews you'd do at 90%.` : x > 1.05 ? ` About ${x.toFixed(1)}× the reviews you'd do at 90%.` : '';
+      hint.textContent = `${kind}${amount}${note}`;
+    };
+    r.addEventListener('input', () => show());
+    r.addEventListener('change', async () => {
+      const res = await post('/api/account/prefs', { retention: Number(r.value) / 100 }).catch(() => null);
+      show(res?.ok ? ' Saved.' : ' Not saved, try again.');
+    });
+    show();
+  }
+
+  function reminders() {
+    const box = document.querySelector<HTMLElement>('[data-push]');
+    if (!box) return;
+    const msg = box.querySelector('[data-push-msg]')!, toggle = box.querySelector<HTMLButtonElement>('[data-push-toggle]')!;
+    const test = box.querySelector<HTMLButtonElement>('[data-push-test]')!, time = box.querySelector<HTMLInputElement>('[data-remind-at]')!;
+    const say = (t: string) => { msg.textContent = t; };
+    const setOn = (on: boolean) => { box.dataset.on = on ? '1' : ''; toggle.textContent = on ? 'Turn off' : 'Turn on'; test.hidden = !on; };
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      toggle.disabled = true; setOn(false);
+      say(/iPhone|iPad/.test(navigator.userAgent) ? 'On iPhone and iPad, add Lightbox to your Home Screen first (Share, then Add to Home Screen) and turn this on from there.' : 'This browser cannot show reminders.');
+      return;
+    }
+    if (Notification.permission === 'denied') say('Notifications are blocked for this site. Allow them in your browser settings, then turn this on.');
+    // The server knows reminders are on for the account; this device may not be subscribed.
+    navigator.serviceWorker.getRegistration().then((reg) => reg?.pushManager.getSubscription()).then((sub) => { if (!sub && box.dataset.on) setOn(false); }).catch(() => {});
+    const minutes = () => { const [h, m] = time.value.split(':').map(Number); return Number.isInteger(h) && Number.isInteger(m) ? h * 60 + m : 19 * 60; };
+    const key = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+    toggle.addEventListener('click', async () => {
+      toggle.disabled = true;
+      try {
+        await navigator.serviceWorker.register('/sw.js');
+        const reg = await navigator.serviceWorker.ready;
+        if (box.dataset.on) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) { await post('/api/push/subscription', { endpoint: sub.endpoint }, 'DELETE'); await sub.unsubscribe(); }
+          await post('/api/account/prefs', { remindAt: null });
+          setOn(false); say('Reminders are off.');
+          return;
+        }
+        if ((await Notification.requestPermission()) !== 'granted') { say('Allow notifications for this site to get reminders.'); return; }
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(box.dataset.key!) });
+        const res = await post('/api/push/subscription', sub.toJSON());
+        if (!res.ok) { say(await errorOf(res, 'Could not turn reminders on.')); return; }
+        await post('/api/account/prefs', { remindAt: minutes() });
+        setOn(true); say(`On. One reminder a day after ${time.value}, Pakistan time, when there is something to review.`);
+      } catch { say('Could not change reminders. Try again.'); } finally { toggle.disabled = false; }
+    });
+    time.addEventListener('change', async () => {
+      if (!box.dataset.on) return;
+      const res = await post('/api/account/prefs', { remindAt: minutes() }).catch(() => null);
+      say(res?.ok ? `Reminder moved to ${time.value}.` : 'Not saved, try again.');
+    });
+    test.addEventListener('click', async () => {
+      test.disabled = true;
+      const res = await post('/api/push/test', {}).catch(() => null);
+      say(!res ? 'You seem to be offline.' : res.ok ? 'Sent. It should appear in a few seconds.' : await errorOf(res, 'Could not send a test.'));
+      test.disabled = false;
+    });
   }
   init();
   document.addEventListener('astro:after-swap', init);

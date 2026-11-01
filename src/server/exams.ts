@@ -1,7 +1,8 @@
 import { randomInt } from 'node:crypto';
 import { db, now } from './db';
 import { recordAttempt } from './progress';
-import { facts, images, mcqs, shortFile, SYSTEMS, type Fact, type Mcq } from '../lib/data';
+import { mcqTopics } from './analytics';
+import { facts, images, mcqs, shortFile, SYSTEMS, topicBySlug, type Fact, type Mcq } from '../lib/data';
 import { HISTORIES, matcher, PAPERS, STATUSES, type Filters, type Mine, type PoolItem } from '../lib/quiz';
 
 export type Mode = 'quiz' | 'exam' | 'toacs';
@@ -96,6 +97,30 @@ export function createExam(userId: number, b: Build): number | string {
   return insert(userId, b.mode, title, { filters: b.filters, shuffle: b.shuffle, shuffleOptions: b.shuffleOptions, perQuestion: b.perQuestion || null }, items, b.mode === 'exam' ? seconds : null);
 }
 
+/** Questions for one topic: keyed MCQs from the topic's own paper pages first, then the rest of its system. */
+export function topicQuestions(slug: string) {
+  const t = topicBySlug.get(slug);
+  if (!t) return [];
+  const own = pool.filter((p) => p.keyed && mcqTopics.get(p.qid)?.includes(slug));
+  const ids = new Set(own.map((p) => p.qid));
+  return [...own, ...pool.filter((p) => p.keyed && p.system === t.system && !ids.has(p.qid))];
+}
+
+/** Fix-it check: a short untimed quiz on a topic, preferring questions the student hasn't yet got right. */
+export function createTopicQuiz(userId: number, slug: string, count = 3, before: number | null = null): number | string {
+  const t = topicBySlug.get(slug);
+  if (!t) return 'Unknown topic.';
+  const m = mine(userId), right = new Set(m.answered.filter((q) => !m.wrong.includes(q)));
+  const qs = topicQuestions(slug);
+  if (!qs.length) return 'No keyed questions cover this topic yet.';
+  const picked = [...shuffled(qs.filter((p) => !right.has(p.qid))), ...shuffled(qs.filter((p) => right.has(p.qid)))].slice(0, count);
+  return insert(userId, 'quiz', `Fix-it check · ${t.title}`, { fix: slug, before, shuffle: true, shuffleOptions: false, perQuestion: null }, picked.map((p) => ({ q: p.qid })), null);
+}
+
+/** The latest Fix-it check on a topic. */
+export const lastFix = (userId: number, slug: string) =>
+  db.prepare(`SELECT * FROM exams WHERE user_id = ? AND mode = 'quiz' AND json_extract(config, '$.fix') = ? ORDER BY id DESC LIMIT 1`).get(userId, slug) as ExamRow | undefined;
+
 export const toacsGroup = (sourceFile: string) => shortFile(sourceFile).replace(/^WhatsApp Image .*/, 'WhatsApp images');
 export const toacsGroups = () => [...new Set(images.map((i) => toacsGroup(i.sourceFile)))].map((g) => ({ group: g, n: images.filter((i) => toacsGroup(i.sourceFile) === g).length }));
 
@@ -112,7 +137,7 @@ export const own = (userId: number, id: number) => db.prepare('SELECT * FROM exa
 // Skips items the regenerated data no longer has, so an old session never 500s.
 const imageFiles = new Set(images.map((i) => i.file));
 export const itemsOf = (e: ExamRow) => (JSON.parse(e.items) as Item[]).filter((i) => (e.mode === 'toacs' ? imageFiles.has(i.q) : mcqByQid.has(i.q)));
-export const configOf = (e: ExamRow) => JSON.parse(e.config) as { pos?: number; seconds?: number; group?: string; filters?: Filters };
+export const configOf = (e: ExamRow) => JSON.parse(e.config) as { pos?: number; seconds?: number; group?: string; filters?: Filters; fix?: string; before?: number | null };
 export const deadlineOf = (e: ExamRow) => (e.time_limit ? e.started_at + e.time_limit * 1000 : null);
 export const answersOf = (examId: number) => new Map((db.prepare('SELECT item_id, choice, correct, flagged, ms, answered_at FROM exam_answers WHERE exam_id = ?').all(examId) as AnswerRow[]).map((a) => [a.item_id, a]));
 

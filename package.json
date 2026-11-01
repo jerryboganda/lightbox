@@ -12,6 +12,7 @@
     "astro": "astro",
     "test": "vitest run",
     "export-content": "node scripts/export-content.mjs",
+    "vapid": "node scripts/vapid.mjs",
     "e2e": "playwright test",
     "check": "astro check"
   },

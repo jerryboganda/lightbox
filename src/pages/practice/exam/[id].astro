@@ -24,6 +24,7 @@ if (!e.finished_at) {
 } else r = results(e);
 
 const shuffled = itemsOf(e).some((i) => i.o);
+const fix = configOf(e).fix;
 const bars = r ? [['By paper', r.byPaper.map((g) => ({ ...g, label: PAPERS[g.key] ?? g.key }))], ['By system, inferred', r.bySystem.map((g) => ({ ...g, label: SYSTEMS[g.key]?.label ?? g.key }))]] as const : [];
 const filters = r ? [['all', 'All', r.rows.length], ['wrong', 'Wrong', r.wrong], ['flagged', 'Flagged', r.flagged], ['unanswered', 'Unanswered', r.unanswered], ['disputed', 'Disputed', r.disputed]] as const : [];
 ---
@@ -48,7 +49,8 @@ const filters = r ? [['all', 'All', r.rows.length], ['wrong', 'Wrong', r.wrong],
           <p class="mt-1 text-muted">{r.keyed ? <>Scored on the <span class="num">{r.keyed}</span> question{r.keyed === 1 ? ' that has' : 's that have'} an answer key</> : 'No question here has an answer key, so nothing is scored'}{r.unscored > 0 && r.keyed > 0 && <>; <span class="num">{r.unscored}</span> without a key {r.unscored === 1 ? 'is' : 'are'} practice only</>}.</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <form method="post" action={`/api/exams/${e.id}/retake`}><button class="btn btn-primary" disabled={r.keyed - r.right === 0}><Icon name="RotateCcw" size={16} />Retake wrong ones{r.keyed - r.right > 0 && <span class="num opacity-80">{r.keyed - r.right}</span>}</button></form>
+          {fix && <a href={`/fix/${fix}`} class="btn btn-primary"><Icon name="Wrench" size={16} />Back to Fix-it</a>}
+          <form method="post" action={`/api/exams/${e.id}/retake`}><button class:list={['btn', { 'btn-primary': !fix }]} disabled={r.keyed - r.right === 0}><Icon name="RotateCcw" size={16} />Retake wrong ones{r.keyed - r.right > 0 && <span class="num opacity-80">{r.keyed - r.right}</span>}</button></form>
           <a href="/practice/builder" class="btn"><Icon name="SlidersHorizontal" size={16} />New quiz</a>
         </div>
       </header>

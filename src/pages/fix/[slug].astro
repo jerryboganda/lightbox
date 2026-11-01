@@ -1,0 +1,181 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Status from '../../components/Status.astro';
+import MarkToggle from '../../components/MarkToggle.astro';
+import { SYSTEMS, topicBySlug } from '../../lib/data';
+import { db } from '../../server/db';
+import { dayStart, topicFacts, weakFor } from '../../server/analytics';
+import { deckStatus, factStates, type FactState } from '../../server/progress';
+import { configOf, lastFix, results, topicQuestions } from '../../server/exams';
+
+const uid = Astro.locals.user!.id;
+const t = topicBySlug.get(Astro.params.slug ?? '');
+if (!t) return Astro.redirect('/analytics');
+const note = `/study/${t.system}/${t.slug}`;
+const ids = topicFacts.get(t.slug) ?? [];
+const w = weakFor(uid, t.slug);
+const deck = deckStatus(uid, ids);
+const states = factStates(uid, ids);
+const withCards = Object.keys(states);
+const t0 = dayStart();
+
+const read = !!db.prepare("SELECT 1 FROM visits WHERE user_id = ? AND kind = 'topic' AND ref = ? AND at >= ?").get(uid, note, t0);
+const drilled = withCards.length
+  ? (db.prepare(`SELECT COUNT(DISTINCT fact_id) n FROM srs_log WHERE user_id = ? AND reviewed_at >= ? AND fact_id IN (${withCards.map(() => '?').join(',')})`).get(uid, t0, ...withCards) as { n: number }).n
+  : 0;
+const drillGoal = Math.min(10, withCards.length);
+const fx = lastFix(uid, t.slug);
+const res = fx?.finished_at ? results(fx) : null;
+const before = fx ? configOf(fx).before ?? null : null;
+const hasQs = topicQuestions(t.slug).length > 0;
+const passed = !!res && res.keyed > 0 && res.right * 3 >= res.keyed * 2;
+const nowScore = w?.score ?? 0;
+
+// Key points: the student's shakiest facts first, never a disputed one; shown in note order.
+const RANK: Record<FactState, number> = { lapsed: 0, learning: 1, unseen: 2, strong: 3 };
+const STATE: Record<FactState, string> = { lapsed: 'Slipping', learning: 'Learning', unseen: 'Not learned yet', strong: 'Strong' };
+const worst = (xs: string[]) => xs.map((id) => states[id]).filter(Boolean).sort((a, b) => RANK[a] - RANK[b])[0] as FactState | undefined;
+const points = t.sections.flatMap((s) => s.bullets).map((b, i) => ({ ...b, i, state: worst(b.ids) }))
+  .filter((b) => b.label !== 'disputed')
+  .sort((a, b) => (a.state ? RANK[a.state] : 2.5) - (b.state ? RANK[b.state] : 2.5) || a.i - b.i)
+  .slice(0, 6).sort((a, b) => a.i - b.i);
+const tally = (['lapsed', 'learning', 'unseen', 'strong'] as const).map((k) => [k, withCards.filter((id) => states[id] === k).length] as const).filter(([, n]) => n);
+const steps = [read, drillGoal > 0 && drilled >= drillGoal, !!res, passed];
+const back = `/fix/${t.slug}`;
+---
+<App title={`Fix: ${t.title}`} crumbs={[{ label: 'Analytics', href: '/analytics' }, { label: SYSTEMS[t.system]?.label ?? t.system, href: `/study/${t.system}` }]}>
+  <header class="reveal" style="--i:0">
+    <p class="flex items-center gap-2 text-xs text-muted"><Icon name="Wrench" size={14} class="text-accent" />Fix-it · about 10 minutes</p>
+    <h1 class="mt-2 text-2xl font-medium sm:text-[1.75rem]">{t.title}</h1>
+    <p class="mt-1 max-w-[65ch] text-muted">Four short steps: re-read the key points, drill the cards, answer three questions, then see if it is fixed. Pass the check (2 of 3) and older slips on this topic stop counting against you.</p>
+    <div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
+      {w ? (
+        <span class="chip"><Icon name="TriangleAlert" size={14} class="text-signal" />Weakness score <span class="num text-ink">{w.score}</span><span class="text-faint">· {w.reason}</span></span>
+      ) : (
+        <span class="chip"><Icon name="CircleCheck" size={14} class="text-ok" />Not on your weak list right now</span>
+      )}
+      {tally.map(([k, n]) => <span class={`chip st st-${k}`}><span class="sd" aria-hidden="true"></span><span class="num">{n}</span> {STATE[k].toLowerCase()}</span>)}
+    </div>
+  </header>
+
+  <ol class="steps mt-8">
+    <li class:list={['step panel reveal', { done: steps[0] }]} style="--i:1">
+      <span class="sn" aria-hidden="true">{steps[0] ? <Icon name="Check" size={15} /> : '1'}</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-lg font-medium">Re-read the key points<span class="sr-only">{steps[0] ? ' (done today)' : ''}</span></h2>
+        <p class="mt-0.5 text-sm text-muted">Your shakiest points on this topic. Say each one back to yourself before moving on.</p>
+        <ul class="mt-4 space-y-2">
+          {points.map((b) => (
+            <li class="kp">
+              <span class={`sd st-${b.state ?? 'none'}`} title={b.state ? STATE[b.state] : 'No flashcard'} aria-hidden="true"></span>
+              <div class="min-w-0">
+                <p class="leading-relaxed">{b.text.replace(/^Paper differs:\s*/, 'Paper differs. ')}</p>
+                <p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-faint"><Status label={b.label} />{b.state && <span>{STATE[b.state]}</span>}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <a href={note} class="btn btn-sm mt-4"><Icon name="BookOpen" size={15} />Open the full note</a>
+      </div>
+    </li>
+
+    <li class:list={['step panel reveal', { done: steps[1] }]} style="--i:2">
+      <span class="sn" aria-hidden="true">{steps[1] ? <Icon name="Check" size={15} /> : '2'}</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-lg font-medium">Drill the cards</h2>
+        {deck.cards > 0 ? (
+          <>
+            <p class="mt-0.5 text-sm text-muted">Up to 10 of this topic's flashcards, shakiest first. <span class="num text-ink">{Math.min(drilled, drillGoal)}</span> of <span class="num">{drillGoal}</span> reviewed today.</p>
+            <button type="button" class="btn btn-sm btn-primary mt-4" data-fix-learn={t.slug} data-back={back}><Icon name="Layers" size={15} />{steps[1] ? 'Drill again' : 'Drill 10 cards'}</button>
+          </>
+        ) : <p class="mt-0.5 text-sm text-muted">This topic has no flashcards yet. Skip to the questions.</p>}
+      </div>
+    </li>
+
+    <li class:list={['step panel reveal', { done: steps[2] }]} style="--i:3">
+      <span class="sn" aria-hidden="true">{steps[2] ? <Icon name="Check" size={15} /> : '3'}</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-lg font-medium">Answer three questions</h2>
+        {hasQs ? (
+          <>
+            <p class="mt-0.5 text-sm text-muted">Past-paper questions from this topic's pages (then its system), ones you have not got right first. Untimed, with feedback.</p>
+            {res && <p class="mt-2 text-sm">Last check: <span class="num font-medium">{res.right}</span> of <span class="num">{res.keyed}</span> right.</p>}
+            <div class="mt-4 flex flex-wrap gap-2">
+              {fx && !fx.finished_at
+                ? <a href={`/practice/exam/${fx.id}`} class="btn btn-sm btn-primary"><Icon name="Play" size={15} />Continue the check</a>
+                : <button type="button" class="btn btn-sm btn-primary" data-fix-quiz={t.slug}><Icon name="ListChecks" size={15} />{res ? 'New check' : 'Start the check'}</button>}
+            </div>
+            <p class="mt-2 hidden text-sm text-signal" data-fix-err role="alert"></p>
+          </>
+        ) : <p class="mt-0.5 text-sm text-muted">No keyed past-paper question covers this topic yet. Use the <a href={`/tutor?topic=${t.slug}`} class="text-accent hover:underline">AI tutor</a> to quiz yourself instead.</p>}
+      </div>
+    </li>
+
+    <li class:list={['step panel reveal', { done: steps[3] }]} style="--i:4">
+      <span class="sn" aria-hidden="true">{steps[3] ? <Icon name="Check" size={15} /> : '4'}</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-lg font-medium">Is it fixed?</h2>
+        {res ? (
+          <>
+            <p class="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm">
+              Weakness score <span class="num text-lg font-medium">{before ?? '–'}</span><Icon name="ArrowRight" size={14} class="self-center text-faint" /><span class:list={['num text-lg font-medium', nowScore < (before ?? Infinity) ? 'text-ok' : 'text-signal']}>{nowScore}</span>
+            </p>
+            <p class="mt-1 max-w-[60ch] text-sm text-muted">{passed
+              ? 'Passed. Earlier slips on this topic no longer count; new ones will. Your spaced reviews will keep checking it.'
+              : `Not yet: you need 2 of 3. Drill the cards once more, then take a new check.`}</p>
+          </>
+        ) : <p class="mt-0.5 text-sm text-muted">Finish the check to see your weakness score before and after.</p>}
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <MarkToggle type="topic" id={t.slug} kind="weak" />
+          <a href="/analytics#weak" class="btn btn-sm btn-ghost"><Icon name="ChartColumn" size={15} />All weak topics</a>
+          <a href={`/tutor?topic=${t.slug}`} class="btn btn-sm btn-ghost"><Icon name="Sparkles" size={15} />Ask the tutor</a>
+        </div>
+      </div>
+    </li>
+  </ol>
+</App>
+
+<script>
+  function init() {
+    const learn = document.querySelector<HTMLButtonElement>('[data-fix-learn]');
+    if (learn) learn.onclick = async () => {
+      const slug = learn.dataset.fixLearn!;
+      learn.disabled = true;
+      const r = await fetch('/api/srs/learn', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ topic: slug }) }).catch(() => null);
+      if (r?.ok) location.assign(`/practice/cards?topic=${encodeURIComponent(slug)}&limit=10&back=${encodeURIComponent(learn.dataset.back!)}`);
+      else { learn.disabled = false; learn.title = 'Could not add the cards. Try again.'; }
+    };
+    const quiz = document.querySelector<HTMLButtonElement>('[data-fix-quiz]');
+    const err = document.querySelector<HTMLElement>('[data-fix-err]');
+    if (quiz) quiz.onclick = async () => {
+      quiz.disabled = true;
+      const r = await fetch('/api/fix/quiz', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: quiz.dataset.fixQuiz }) }).catch(() => null);
+      const j = await r?.json().catch(() => null);
+      if (r?.ok && j?.href) return location.assign(j.href);
+      quiz.disabled = false;
+      if (err) { err.textContent = j?.error ?? 'Could not start the check. Try again.'; err.classList.remove('hidden'); }
+    };
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .steps { display: grid; gap: 0.9rem; max-width: 52rem; }
+  .step { display: flex; gap: 1rem; padding: 1.25rem 1.4rem; }
+  .sn { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; border-radius: 99px; border: 1px solid var(--line-strong); font: 500 0.85rem var(--font-mono); color: var(--muted); }
+  .step.done .sn { border-color: transparent; background: color-mix(in oklab, var(--ok) 16%, transparent); color: var(--ok); }
+  .kp { display: flex; gap: 0.75rem; padding: 0.6rem 0.75rem; margin-inline: -0.75rem; border-radius: 10px; }
+  .kp:hover { background: color-mix(in oklab, var(--ink) 3.5%, transparent); }
+  .kp .sd { margin-top: 0.55rem; }
+  .sd { display: inline-block; flex: none; width: 0.5rem; height: 0.5rem; border-radius: 99px; background: var(--c, var(--faint)); }
+  .st-lapsed { --c: var(--bad); }
+  .st-learning { --c: var(--signal); }
+  .st-unseen { --c: var(--faint); }
+  .st-strong { --c: var(--ok); }
+  .st-none { --c: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+  header .chip { cursor: default; }
+  header .chip:hover { color: var(--muted); border-color: var(--line); }
+  @media (max-width: 640px) { .step { padding: 1.1rem 1rem; gap: 0.75rem; } }
+</style>
