@@ -1,24 +1,31 @@
 // The AI tutor: saved chats, streamed answers grounded on Lightbox facts with citation chips. Page: /tutor (client:load).
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowUp, ArrowUpRight, BookOpenText, Check, Copy, PanelLeft, Pencil, RotateCcw, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, BookOpenText, Check, Copy, GraduationCap, Layers, Lightbulb, ListChecks, PanelLeft, Pencil, RotateCcw, Sparkles, Square, SquarePen, Target, Trash2, X } from 'lucide-react';
 import { toast } from '../../scripts/toast';
 import { reduced } from '../../scripts/motion';
 import { takeAsk } from '../../lib/askAi';
-import { AiState, AiText, Thinking, left, streamAi, useReveal, type CiteInfo, type Quota } from './AiText';
+import type { Grounded } from '../../lib/grounding';
+import { AiState, AiText, Grounding, Thinking, Thumbs, left, streamAi, useReveal, type CiteInfo, type Quota } from './AiText';
 
 export interface TopicRef { slug: string; title: string; href: string }
 export interface ChatRow { id: number; title: string; topic: TopicRef | null; updatedAt: number }
-export interface SavedMsg { id: number; role: 'user' | 'assistant'; content: string; cites: CiteInfo[] }
+export interface SavedMsg { id: number; role: 'user' | 'assistant'; content: string; cites: CiteInfo[]; grounded?: Grounded; vote?: -1 | 1 }
 export interface TutorChatProps {
   enabled: boolean; quota: Quota; chats: ChatRow[]; active: number | null; messages: SavedMsg[];
   topic: TopicRef | null; starters: { topic: string[]; general: string[]; weak: boolean };
 }
-interface Msg { key: string; role: 'user' | 'assistant'; content: string; cites: CiteInfo[] | null; fresh?: boolean; stopped?: boolean; phase?: 'wait' | 'stream' | 'error'; error?: string; status?: number }
+interface Msg { key: string; id?: number; role: 'user' | 'assistant'; content: string; cites: CiteInfo[] | null; grounded?: Grounded; vote?: -1 | 1; fresh?: boolean; stopped?: boolean; phase?: 'wait' | 'stream' | 'error'; error?: string; status?: number }
 
 const MAX = 2000;
 const EASE = [0.16, 1, 0.3, 1] as const;
-const toMsg = (m: SavedMsg): Msg => ({ key: `s${m.id}`, role: m.role, content: m.content, cites: m.cites });
+const toMsg = (m: SavedMsg): Msg => ({ key: `s${m.id}`, id: m.id, role: m.role, content: m.content, cites: m.cites, grounded: m.grounded, vote: m.vote });
+// One-tap next steps under the latest answer: three follow-up questions, then actions on the facts it cited.
+const FOLLOW = [
+  { q: 'How is this examined? Give the likely MCQ and TOACS angles.', label: 'How is it examined?', Icon: Target },
+  { q: 'Give me a memory hook for the key points above.', label: 'Memory hook', Icon: Lightbulb },
+  { q: 'What are the key differentials and how do I tell them apart?', label: 'Key differentials', Icon: ListChecks },
+];
 const ago = (t: number) => {
   const s = (Date.now() - t) / 1000;
   return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86_400 ? `${Math.round(s / 3600)} h ago` : new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
@@ -63,7 +70,44 @@ function ChatList({ chats, active, onOpen, onRename, onDelete }: { chats: ChatRo
   );
 }
 
-function Message({ m, last, onRetry }: { m: Msg; last: boolean; onRetry: () => void }) {
+function NextSteps({ ids, onAsk }: { ids: string[]; onAsk: (q: string) => void }) {
+  const [doing, setDoing] = useState<'quiz' | 'learn' | null>(null);
+  const post = async (url: string, body: unknown) => {
+    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+    return { ok: !!r?.ok, j: await r?.json().catch(() => null) };
+  };
+  const quiz = async () => {
+    setDoing('quiz');
+    const { ok, j } = await post('/api/ai/quiz', { factIds: ids });
+    if (ok && j?.href) { location.href = j.href; return; }
+    setDoing(null);
+    toast(j?.error ?? 'Could not build a quiz', 'bad');
+  };
+  const learn = async () => {
+    setDoing('learn');
+    const { ok, j } = await post('/api/srs/learn', { factIds: ids });
+    setDoing(null);
+    if (!ok) { toast(j?.error ?? 'Could not add the cards', 'bad'); return; }
+    toast(j.added ? `${j.added} card${j.added === 1 ? '' : 's'} added to your deck${j.already ? ` · ${j.already} already there` : ''}` : 'These cards are already in your deck', 'ok');
+  };
+  return (
+    <div className="ai-chips mt-3" role="group" aria-label="Next steps">
+      {FOLLOW.map(({ q, label, Icon }) => (
+        <button key={label} type="button" className="ai-chip" onClick={() => onAsk(q)}><Icon size={13} aria-hidden="true" />{label}</button>
+      ))}
+      {ids.length > 0 && <>
+        <button type="button" className="ai-chip is-act" onClick={quiz} disabled={doing !== null} title="Five past-paper questions on the topics behind the cited facts">
+          <GraduationCap size={13} aria-hidden="true" />{doing === 'quiz' ? 'Building…' : 'Quiz me'}
+        </button>
+        <button type="button" className="ai-chip is-act" onClick={learn} disabled={doing !== null} title="Add the verified flashcards for the cited facts to your deck">
+          <Layers size={13} aria-hidden="true" />{doing === 'learn' ? 'Adding…' : 'Learn these cards'}
+        </button>
+      </>}
+    </div>
+  );
+}
+
+function Message({ m, last, onRetry, onAsk }: { m: Msg; last: boolean; onRetry: () => void; onAsk?: (q: string) => void }) {
   const shown = useReveal(m.content, !!m.fresh);
   const live = m.phase === 'wait' || m.phase === 'stream';
   const revealing = shown.length < m.content.length;
@@ -92,13 +136,17 @@ function Message({ m, last, onRetry }: { m: Msg; last: boolean; onRetry: () => v
         </div>
         {!live && !revealing && m.phase !== 'error' && m.content && (
           <div className="tc-foot">
-            <span className="ai-note">{m.stopped ? 'Stopped · the answer is incomplete' : n ? `Grounded on ${n} cited fact${n === 1 ? '' : 's'}` : 'No Lightbox fact cited. Treat with care.'}</span>
-            <span className="ml-auto flex items-center">
+            {m.stopped ? <span className="ai-note">Stopped · the answer is incomplete</span>
+              : m.grounded ? <Grounding grounded={m.grounded} cites={n} />
+              : <span className="ai-note">{n ? `Grounded on ${n} cited fact${n === 1 ? '' : 's'}` : 'No Lightbox fact cited. Treat with care.'}</span>}
+            <span className="ml-auto flex items-center gap-1">
+              {m.id !== undefined && <Thumbs kind="tutor" refId={String(m.id)} initial={m.vote ?? 0} />}
               <button type="button" className="tc-ib" onClick={copy} aria-label="Copy answer">{copied ? <Check size={14} className="text-ok" aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button>
               {last && <button type="button" className="tc-ib" onClick={onRetry} aria-label="Answer again"><RotateCcw size={14} aria-hidden="true" /></button>}
             </span>
           </div>
         )}
+        {last && onAsk && !live && !revealing && m.phase !== 'error' && !m.stopped && m.content && <NextSteps ids={(m.cites ?? []).map((c) => c.id)} onAsk={onAsk} />}
       </div>
     </motion.li>
   );
@@ -172,7 +220,7 @@ export default function TutorChat(p: TutorChatProps) {
       patchLast((m) => ({ ...m, phase: 'error', error: r.error, status: r.status }));
       setSay(r.error);
     } else {
-      patchLast((m) => ({ ...m, phase: undefined, cites: r.done?.cites ?? [] }));
+      patchLast((m) => ({ ...m, phase: undefined, cites: r.done?.cites ?? [], id: r.done?.id, grounded: r.done?.grounded }));
       if (r.done?.quota) setQuota(r.done.quota);
       setSay(`Tutor: ${plain(got)}`);
       setChats((l) => { const c0 = l.find((x) => x.id === id); return c0 ? [{ ...c0, updatedAt: Date.now() }, ...l.filter((x) => x !== c0)] : l; });
@@ -253,7 +301,7 @@ export default function TutorChat(p: TutorChatProps) {
           <div className="tc-log grid content-start gap-4 pt-6" aria-hidden="true"><span className="skeleton ml-auto h-10 w-2/3" /><span className="skeleton h-24 w-11/12" /><span className="skeleton ml-auto h-10 w-1/2" /></div>
         ) : msgs.length ? (
           <ol className="tc-log" aria-label="Conversation">
-            {msgs.map((m, i) => <Message key={m.key} m={m} last={i === msgs.length - 1} onRetry={() => ask(null)} />)}
+            {msgs.map((m, i) => <Message key={m.key} m={m} last={i === msgs.length - 1} onRetry={() => ask(null)} onAsk={p.enabled && !busy ? (q) => ask(q) : undefined} />)}
           </ol>
         ) : (
           <div className="tc-empty">

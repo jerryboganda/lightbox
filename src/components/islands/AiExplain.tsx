@@ -3,7 +3,7 @@
 import { useId, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, RefreshCw, Sparkles, X } from 'lucide-react';
-import { AiState, AiText, Thinking, quotaText, useAiStream, useReveal } from './AiText';
+import { AiState, AiText, Grounding, Thinking, Thumbs, quotaText, useAiStream, useReveal } from './AiText';
 
 export interface AiExplainProps { factId: string }
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -64,7 +64,11 @@ export default function AiExplain({ factId }: AiExplainProps) {
                     </ul>
                   </div>
                 )}
-                <p className="ai-note">{s.done?.cached ? 'Shared with the class · no AI request used' : quotaText(s.done?.quota)}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Grounding grounded={s.done?.grounded} cites={s.done?.cites?.length} />
+                  <p className="ai-note">{s.done?.cached ? 'Shared with the class · no AI request used' : quotaText(s.done?.quota)}</p>
+                  <span className="ml-auto"><Thumbs kind="explain" refId={factId} /></span>
+                </div>
               </motion.footer>
             )}
           </motion.section>

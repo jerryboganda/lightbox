@@ -2,13 +2,14 @@
 // (paragraphs, lists, **bold**, [F-...] citation chips) as React text nodes, never HTML.
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleAlert, PlugZap } from 'lucide-react';
+import { CircleAlert, CircleCheck, PlugZap, ThumbsDown, ThumbsUp, TriangleAlert, BookX } from 'lucide-react';
 import { reduced } from '../../scripts/motion';
+import type { Grounded } from '../../lib/grounding';
 import '../../styles/ai.css';
 
 export interface CiteInfo { id: string; fact: string; label: string }
 export interface Quota { used: number; cap: number }
-export interface Done { cites?: CiteInfo[]; quota?: Quota; cached?: boolean; id?: number; admin?: boolean }
+export interface Done { cites?: CiteInfo[]; quota?: Quota; cached?: boolean; id?: number; admin?: boolean; grounded?: Grounded; grade?: 'got' | 'partial' | 'missed' | null }
 export interface StreamResult { done?: Done; error?: string; status?: number; quota?: Quota; aborted?: boolean }
 
 /** POSTs JSON and reads the server's events ({d}, {done}, {error}). Errors before the stream come back with their HTTP status. */
@@ -182,6 +183,32 @@ export function Thinking({ label }: { label: string }) {
 
 export const left = (q?: Quota) => (q ? Math.max(0, q.cap - q.used) : null);
 export const quotaText = (q?: Quota) => (q ? `${left(q)} of ${q.cap} AI requests left today` : '');
+
+/** How well an answer stood on the notes: cited facts, said the notes do not cover it, or neither (treat with care). */
+export function Grounding({ grounded, cites }: { grounded?: Grounded; cites?: number }) {
+  if (!grounded) return null;
+  if (grounded === 'grounded') return <span className="ai-ground is-grounded" title="Every cited id is a Lightbox fact the AI was given"><CircleCheck size={12} aria-hidden="true" />Grounded on {cites ?? 0} fact{cites === 1 ? '' : 's'}</span>;
+  if (grounded === 'not-covered') return <span className="ai-ground" title="The notes do not cover this yet; check a textbook"><BookX size={12} aria-hidden="true" />Not in the notes yet</span>;
+  return <span className="ai-ground is-unsourced" title="The AI cited no Lightbox fact, so this may come from its own memory"><TriangleAlert size={12} aria-hidden="true" />No fact cited · treat with care</span>;
+}
+
+/** Thumbs up/down for an AI answer. Pressing the same thumb again clears the vote. */
+export function Thumbs({ kind, refId, initial = 0 }: { kind: 'tutor' | 'explain' | 'mistake' | 'aid' | 'coach'; refId: string; initial?: -1 | 0 | 1 }) {
+  const [vote, setVote] = useState(initial);
+  useEffect(() => setVote(initial), [initial, refId]);
+  const send = async (v: -1 | 1) => {
+    const next = vote === v ? 0 : v, prev = vote;
+    setVote(next);
+    const r = await fetch('/api/ai/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, ref: refId, vote: next }) }).catch(() => null);
+    if (!r?.ok) setVote(prev);
+  };
+  return (
+    <span className="ai-thumbs" role="group" aria-label="Was this helpful?">
+      <button type="button" className="ai-thumb" aria-pressed={vote === 1} title="Helpful" aria-label="Helpful" onClick={() => send(1)}><ThumbsUp size={14} aria-hidden="true" /></button>
+      <button type="button" className="ai-thumb is-down" aria-pressed={vote === -1} title="Not helpful or wrong" aria-label="Not helpful" onClick={() => send(-1)}><ThumbsDown size={14} aria-hidden="true" /></button>
+    </span>
+  );
+}
 
 /** Not configured (503), limits (429) and failures, each with a plain next step. */
 export function AiState({ status, error, onRetry }: { status?: number; error?: string; onRetry?: () => void }) {

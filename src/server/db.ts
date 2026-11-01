@@ -342,6 +342,29 @@ const MIGRATIONS = [
      fails INTEGER NOT NULL DEFAULT 0
    );
    CREATE INDEX push_subs_user ON push_subs(user_id);`,
+  // v6: AI quality. One row per AI request (cache hits included) with its outcome and grounding, and students' thumbs up/down.
+  `CREATE TABLE ai_events (
+     id INTEGER PRIMARY KEY,
+     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+     kind TEXT NOT NULL,
+     cached INTEGER NOT NULL DEFAULT 0,
+     ok INTEGER NOT NULL DEFAULT 1,
+     tokens INTEGER NOT NULL DEFAULT 0,
+     ms INTEGER NOT NULL DEFAULT 0,
+     cites INTEGER,
+     grounded TEXT CHECK (grounded IN ('grounded','not-covered','unsourced')),
+     created_at INTEGER NOT NULL
+   );
+   CREATE INDEX ai_events_at ON ai_events(created_at);
+   CREATE TABLE ai_feedback (
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     kind TEXT NOT NULL,
+     ref TEXT NOT NULL,
+     vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (user_id, kind, ref)
+   );
+   CREATE INDEX ai_feedback_kind ON ai_feedback(kind, created_at);`,
 ];
 
 function open() {

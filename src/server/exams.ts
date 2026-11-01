@@ -117,6 +117,25 @@ export function createTopicQuiz(userId: number, slug: string, count = 3, before:
   return insert(userId, 'quiz', `Fix-it check · ${t.title}`, { fix: slug, before, shuffle: true, shuffleOptions: false, perQuestion: null }, picked.map((p) => ({ q: p.qid })), null);
 }
 
+/** "Quiz me" from a tutor answer: keyed questions on the topics of the facts it cited, unanswered ones first. */
+export function createFactsQuiz(userId: number, factIds: string[], count = 5): number | string {
+  const fs = factIds.slice(0, 20).map((id) => facts.find((f) => f.id === id)).filter((f): f is Fact => !!f);
+  const slugs = [...new Set(fs.flatMap((f) => f.topics))].filter((s) => topicBySlug.has(s));
+  if (!slugs.length) return 'These facts are not filed under a topic yet.';
+  const seen = new Set<string>(), qs: PoolItem[] = [];
+  // Questions from the cited topics' own pages come before same-system ones.
+  const lists = slugs.map(topicQuestions);
+  for (const own of [true, false]) for (const l of lists) for (const p of l) {
+    if (seen.has(p.qid) || (own && !slugs.some((s) => mcqTopics.get(p.qid)?.includes(s)))) continue;
+    seen.add(p.qid); qs.push(p);
+  }
+  if (!qs.length) return 'No keyed questions cover these facts yet.';
+  const m = mine(userId), done = new Set(m.answered);
+  const picked = [...shuffled(qs.filter((p) => !done.has(p.qid)).slice(0, count * 4)), ...shuffled(qs.filter((p) => done.has(p.qid)))].slice(0, count);
+  const name = topicBySlug.get(slugs[0])!.title + (slugs.length > 1 ? ` +${slugs.length - 1}` : '');
+  return insert(userId, 'quiz', `Tutor quiz · ${name}`, { shuffle: true, shuffleOptions: false, perQuestion: null }, picked.map((p) => ({ q: p.qid })), null);
+}
+
 /** The latest Fix-it check on a topic. */
 export const lastFix = (userId: number, slug: string) =>
   db.prepare(`SELECT * FROM exams WHERE user_id = ? AND mode = 'quiz' AND json_extract(config, '$.fix') = ? ORDER BY id DESC LIMIT 1`).get(userId, slug) as ExamRow | undefined;

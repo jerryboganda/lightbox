@@ -4,7 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowUpRight, Check, CircleCheckBig, Plus, Save, Sparkles, X } from 'lucide-react';
 import type { AiRow } from '../../../server/admin';
 import { toast } from '../../../scripts/toast';
-import { ago, api, bump, fail, full } from './kit';
+import { ago, api, bump, fail, full, plural, useConfirm } from './kit';
 
 export interface AdminAiProps { items: AiRow[]; status: string; now: number }
 const KEYS = 'ABCDEF';
@@ -17,6 +17,27 @@ const same = (a: Draft, b: Draft) => a.stem === b.stem && a.key === b.key && a.e
 export default function AdminAiQueue({ items: initial, status, now }: AdminAiProps) {
   const reduce = useReducedMotion();
   const [items, setItems] = useState(initial);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [confirm, dialog] = useConfirm();
+  const pending = status === 'pending';
+  const drop = (ids: number[]) => { const gone = new Set(ids); setItems((l) => l.filter((x) => !gone.has(x.id))); setSel((s) => new Set([...s].filter((id) => !gone.has(id)))); bump('ai', -ids.length); };
+  const pick = (id: number) => setSel((s) => { const x = new Set(s); x.has(id) ? x.delete(id) : x.add(id); return x; });
+
+  async function batch(decision: 'approve' | 'reject') {
+    const ids = items.filter((m) => sel.has(m.id)).map((m) => m.id);
+    if (!ids.length) return;
+    if (decision === 'approve' && !(await confirm({ title: `Approve ${plural(ids.length, 'question')}?`, body: 'They join the class question bank as they are now. Unsaved edits on these cards are not kept.', confirm: 'Approve' }))) return;
+    setBusy(true);
+    try {
+      const r = await api<{ done: number; skipped: number }>('/api/admin/ai-mcqs/batch', 'POST', decision === 'approve' ? { ids, decision } : { ids, decision, reason });
+      drop(ids);
+      setRejecting(false); setReason('');
+      toast(`${plural(r.done, 'question')} ${decision === 'approve' ? 'approved' : 'rejected'}${r.skipped ? ` · ${r.skipped} already reviewed` : ''}. Creators were told.`, 'ok');
+    } catch (e) { fail(e); } finally { setBusy(false); }
+  }
 
   if (!items.length) return (
     <div className="adm-clear panel">
@@ -27,23 +48,52 @@ export default function AdminAiQueue({ items: initial, status, now }: AdminAiPro
   );
 
   return (
+    <>
+    {pending && items.length > 1 && (
+      <div className="panel mb-3 p-3" role="group" aria-label="Review several at once">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={sel.size === items.length} ref={(el) => { if (el) el.indeterminate = sel.size > 0 && sel.size < items.length; }}
+              onChange={() => setSel(sel.size === items.length ? new Set() : new Set(items.map((m) => m.id)))} />
+            {sel.size ? `${sel.size} of ${items.length} chosen` : `Choose all ${items.length}`}
+          </label>
+          <span className="ml-auto flex flex-wrap gap-2">
+            <button type="button" className="btn btn-sm" disabled={busy || !sel.size} aria-expanded={rejecting} onClick={() => setRejecting(!rejecting)}><X size={15} aria-hidden="true" />Reject chosen</button>
+            <button type="button" className="btn btn-sm btn-primary" disabled={busy || !sel.size} onClick={() => batch('approve')}><Check size={15} aria-hidden="true" />Approve chosen</button>
+          </span>
+        </div>
+        {rejecting && sel.size > 0 && (
+          <form className="ai-rej" onSubmit={(e) => { e.preventDefault(); if (reason.trim()) batch('reject'); }}>
+            <label className="block text-xs font-medium text-muted" htmlFor="rej-batch">Why reject these {sel.size}? Each creator sees this.</label>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">{REASONS.map((r) => <button key={r} type="button" className="chip" aria-pressed={reason === r} onClick={() => setReason(r)}>{r}</button>)}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input id="rej-batch" className="field min-w-0 flex-1 basis-60" maxLength={300} required value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Or write a reason" />
+              <button className="btn btn-danger" disabled={busy || !reason.trim()}><X size={15} aria-hidden="true" />Reject {sel.size}</button>
+            </div>
+          </form>
+        )}
+      </div>
+    )}
     <ol className="ailist" aria-label={`${status} AI questions`}>
       <AnimatePresence initial={false}>
         {items.map((m) => (
           <motion.li key={m.id} layout={reduce ? false : 'position'} exit={{ opacity: 0, x: reduce ? 0 : 28, transition: { duration: 0.22 } }} transition={{ type: 'spring', stiffness: 360, damping: 34 }} className="panel aicard" data-aimcq={m.id}>
             {m.status === 'pending'
-              ? <Editor m={m} now={now} onDone={() => { setItems((l) => l.filter((x) => x.id !== m.id)); bump('ai', -1); }} />
+              ? <Editor m={m} now={now} picked={items.length > 1 ? { on: sel.has(m.id), toggle: () => pick(m.id) } : undefined} onDone={() => drop([m.id])} />
               : <ReadOnly m={m} now={now} />}
           </motion.li>
         ))}
       </AnimatePresence>
     </ol>
+    {dialog}
+    </>
   );
 }
 
-function Meta({ m, now }: { m: AiRow; now: number }) {
+function Meta({ m, now, picked }: { m: AiRow; now: number; picked?: { on: boolean; toggle: () => void } }) {
   return (
     <header className="ai-h">
+      {picked && <input type="checkbox" checked={picked.on} onChange={picked.toggle} aria-label={`Choose question #${m.id}`} />}
       <span className="ai-tag"><Sparkles size={13} aria-hidden="true" />AI draft · unverified</span>
       {m.topic && <a href={m.topic.href} className="text-xs text-muted hover:text-accent">{m.topic.title}</a>}
       <span className="ml-auto text-xs text-faint"><span className="num">#{m.id}</span> · {m.creatorName ? <>by {m.creatorName}</> : 'creator removed'} · <time dateTime={new Date(m.createdAt).toISOString()} title={full(m.createdAt)}>{ago(m.createdAt, now)}</time></span>
@@ -87,7 +137,7 @@ function ReadOnly({ m, now }: { m: AiRow; now: number }) {
   );
 }
 
-function Editor({ m, now, onDone }: { m: AiRow; now: number; onDone: () => void }) {
+function Editor({ m, now, picked, onDone }: { m: AiRow; now: number; picked?: { on: boolean; toggle: () => void }; onDone: () => void }) {
   const reduce = useReducedMotion();
   const [saved, setSaved] = useState(() => draftOf(m));
   const [d, setD] = useState(() => draftOf(m));
@@ -119,7 +169,7 @@ function Editor({ m, now, onDone }: { m: AiRow; now: number; onDone: () => void 
 
   return (
     <>
-      <Meta m={m} now={now} />
+      <Meta m={m} now={now} picked={picked} />
       <div className="ai-grid">
         <div className="min-w-0">
           <label className="ai-lbl" htmlFor={`stem-${m.id}`}>Stem</label>

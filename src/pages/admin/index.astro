@@ -5,6 +5,7 @@ import Overview from './_Overview.astro';
 import Audit from './_Audit.astro';
 import Announcements from './_Announcements.astro';
 import AiUsage from './_AiUsage.astro';
+import AiQuality from './_AiQuality.astro';
 import Health from './_Health.astro';
 import Gaps from './_Gaps.astro';
 import AdminUsers from '../../components/islands/admin/Users';
@@ -12,8 +13,9 @@ import AdminReports from '../../components/islands/admin/Reports';
 import AdminComments from '../../components/islands/admin/Comments';
 import AdminPolls from '../../components/islands/admin/Polls';
 import AdminAiQueue from '../../components/islands/admin/AiQueue';
+import AdminAiBulk from '../../components/islands/admin/AiBulk';
 import { now } from '../../server/db';
-import { AI_STATUS, aiCounts, COMMENT_FILTERS, commentCounts, isAdmin, listAiMcqs, listComments, listPolls, listReports, listUsers, navCounts, REPORT_KINDS, REPORT_STATUS, REPORT_TYPES, reportCounts } from '../../server/admin';
+import { AI_STATUS, aiCounts, bulkTopics, COMMENT_FILTERS, commentCounts, isAdmin, listAiMcqs, listComments, listPolls, listReports, listUsers, navCounts, REPORT_KINDS, REPORT_STATUS, REPORT_TYPES, reportCounts } from '../../server/admin';
 import '../../styles/admin.css';
 
 const me = Astro.locals.user;
@@ -140,9 +142,11 @@ const ac = tab === 'ai' ? aiCounts() : null;
           <div class="flex flex-wrap gap-1.5" role="group" aria-label="Question status">
             {AI_STATUS.map((s) => <a href={s === 'pending' ? '/admin?tab=ai' : `/admin?tab=ai&status=${s}`} class:list={['chip', { on: aiStatus === s }]} aria-current={aiStatus === s ? 'true' : undefined}>{s[0].toUpperCase() + s.slice(1)}<span class="num text-muted">{ac![s]}</span></a>)}
           </div>
-          <a href="#usage" class="btn btn-sm btn-ghost"><Icon name="ChartColumn" size={15} />Usage</a>
+          <span class="flex flex-wrap gap-1"><a href="#quality" class="btn btn-sm btn-ghost"><Icon name="ShieldCheck" size={15} />Quality</a><a href="#usage" class="btn btn-sm btn-ghost"><Icon name="ChartColumn" size={15} />Usage</a></span>
         </div>
         <div class="reveal" style="--i:3"><AdminAiQueue client:idle items={listAiMcqs(aiStatus)} status={aiStatus} now={t} /></div>
+        {aiStatus === 'pending' && <AdminAiBulk client:visible topics={bulkTopics()} />}
+        <AiQuality />
         <AiUsage />
       </section>
     )}

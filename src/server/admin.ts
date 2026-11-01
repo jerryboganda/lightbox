@@ -1,9 +1,9 @@
 import { audit, db, now } from './db';
 import { notify } from './notify';
 import { createUser, resetPassword, validUsername, type Role, type SessionUser } from './auth';
-import { DAY, dayKey, dayStart } from './analytics';
+import { DAY, dayKey, dayStart, mcqTopics } from './analytics';
 import { intId, itemInfo, text } from './personal';
-import { factById, images, mcqs, shortFile, topicBySlug } from '../lib/data';
+import { factById, images, mcqs, shortFile, SYSTEMS, topicBySlug, topics } from '../lib/data';
 
 // Admin console: overview, accounts, moderation, polls, AI review, audit and exports. Every mutation audits.
 type Row = Record<string, any>;
@@ -431,6 +431,71 @@ export function reviewAiMcq(actorId: number, id: number, b: Row): Result<{ statu
   return { status, reviewedAt: t };
 }
 
+/** Approve or reject several pending questions at once; each creator gets one notification for the lot. */
+export function reviewAiMcqs(actorId: number, b: Row): Result<{ done: number; skipped: number }> {
+  const ids = Array.isArray(b.ids) ? [...new Set(b.ids.filter((x: unknown): x is number => Number.isInteger(x) && (x as number) > 0))].slice(0, 200) : [];
+  if (!ids.length) return { error: 'Choose questions to review.' };
+  const approve = b.decision === 'approve';
+  if (!approve && b.decision !== 'reject') return { error: 'Approve or reject.' };
+  const reason = approve ? '' : text(b.reason, 300);
+  if (reason === null) return { error: 'Give a reason for rejecting (up to 300 characters).' };
+  const rows = ids.map(aiRow).filter((m): m is Row => !!m && m.status === 'pending');
+  const t = now(), status = approve ? 'approved' : 'rejected';
+  const upd = db.prepare("UPDATE ai_mcqs SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ? AND status = 'pending'");
+  db.transaction(() => { for (const m of rows) upd.run(status, actorId, t, m.id); })();
+  if (rows.length) audit(actorId, 'aimcq.batch', `${approve ? 'approved' : 'rejected'} ${rows.length}: ${rows.slice(0, 20).map((m) => `#${m.id}`).join(' ')}${rows.length > 20 ? ' …' : ''}${reason ? ` · ${clip(reason, 80)}` : ''}`);
+  const byCreator = new Map<number, number>();
+  for (const m of rows) if (m.created_by) byCreator.set(m.created_by, (byCreator.get(m.created_by) ?? 0) + 1);
+  for (const [uid, n] of byCreator) notify(uid, approve
+    ? { kind: 'ai', title: n === 1 ? 'Your AI question was approved' : `${n} of your AI questions were approved`, body: 'They are now in the class question bank.', href: '/practice/ai' }
+    : { kind: 'ai', title: n === 1 ? 'Your AI question was not approved' : `${n} of your AI questions were not approved`, body: reason, href: '/practice/ai' }, actorId);
+  return { done: rows.length, skipped: ids.length - rows.length };
+}
+
+/** Topics an admin can fill with AI questions: thinnest first (fewest bank, approved and queued questions per verified fact). */
+export function bulkTopics() {
+  const bank = new Map<string, number>();
+  for (const slugs of mcqTopics.values()) for (const s of slugs) bank.set(s, (bank.get(s) ?? 0) + 1);
+  const ai = new Map<string, { approved: number; pending: number }>();
+  for (const r of db.prepare("SELECT topic_slug slug, SUM(status = 'approved') approved, SUM(status = 'pending') pending FROM ai_mcqs WHERE topic_slug IS NOT NULL GROUP BY topic_slug").all() as Row[])
+    ai.set(r.slug, { approved: r.approved, pending: r.pending });
+  return topics.map((t) => {
+    const verified = [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))].filter((id) => factById.get(id)?.status === 'verified').length;
+    const a = ai.get(t.slug) ?? { approved: 0, pending: 0 };
+    return { slug: t.slug, title: t.title, system: SYSTEMS[t.system]?.label ?? t.system, verified, bank: bank.get(t.slug) ?? 0, approved: a.approved, pending: a.pending };
+  }).filter((t) => t.verified >= 3)
+    .sort((x, y) => (x.bank + x.approved + x.pending) / x.verified - (y.bank + y.approved + y.pending) / y.verified || y.verified - x.verified);
+}
+export type BulkTopic = ReturnType<typeof bulkTopics>[number];
+
+// ---- AI quality: what each AI feature costs, how often it is grounded, and what students think of it ----
+export const AI_KIND_LABELS: Record<string, string> = { tutor: 'Tutor', explain: 'Explain a fact', mistake: 'Explain my mistake', aid: 'Topic study aids', coach: 'TOACS coach', dispute: 'Dispute summary', generate: 'MCQ generator' };
+export function aiQuality(days = 14) {
+  const from = now() - days * DAY;
+  const rows = db.prepare(`SELECT kind, COUNT(*) n, SUM(cached) cached, SUM(ok = 0) errors, AVG(CASE WHEN ok = 1 AND cached = 0 THEN ms END) ms, SUM(tokens) tokens,
+      SUM(grounded IS NOT NULL) judged, SUM(grounded = 'grounded') grounded, SUM(grounded = 'not-covered') notCovered, SUM(grounded = 'unsourced') unsourced
+    FROM ai_events WHERE created_at >= ? GROUP BY kind`).all(from) as Row[];
+  const votes = new Map((db.prepare('SELECT kind, SUM(vote = 1) up, SUM(vote = -1) down FROM ai_feedback WHERE created_at >= ? GROUP BY kind').all(from) as Row[]).map((r) => [r.kind, r]));
+  const kinds = [...new Set([...rows.map((r) => r.kind as string), ...votes.keys()])];
+  const byKind = kinds.map((k) => {
+    const r = rows.find((x) => x.kind === k) ?? {}, v = votes.get(k) ?? {};
+    return { kind: k, label: AI_KIND_LABELS[k] ?? k, n: r.n ?? 0, cached: r.cached ?? 0, errors: r.errors ?? 0, ms: Math.round(r.ms ?? 0), tokens: r.tokens ?? 0,
+      judged: r.judged ?? 0, grounded: r.grounded ?? 0, notCovered: r.notCovered ?? 0, unsourced: r.unsourced ?? 0, up: v.up ?? 0, down: v.down ?? 0 };
+  }).sort((a, b) => b.n - a.n);
+  // Shared answers students marked down more than up: candidates for an admin to regenerate.
+  const disliked = (db.prepare(`SELECT kind, ref, SUM(vote = -1) down, SUM(vote = 1) up FROM ai_feedback WHERE kind IN ('aid', 'explain', 'mistake')
+      GROUP BY kind, ref HAVING down > up ORDER BY down DESC, MAX(created_at) DESC LIMIT 10`).all() as Row[]).flatMap((r) => {
+    if (r.kind === 'aid') {
+      const [slug, k] = String(r.ref).split(':'), t = topicBySlug.get(slug);
+      return t ? [{ kind: r.kind, label: `${t.title} · ${k}`, href: `/study/${t.system}/${t.slug}`, down: r.down, up: r.up }] : [];
+    }
+    if (r.kind === 'explain') { const f = factById.get(r.ref); return f ? [{ kind: r.kind, label: `${f.id} · ${clip(f.fact, 90)}`, href: `/facts/${f.id}`, down: r.down, up: r.up }] : []; }
+    const [qid] = String(r.ref).split(':'), m = mcqById.get(qid);
+    return m ? [{ kind: r.kind, label: clip(m.stem, 100), href: `/practice/mcq?q=${encodeURIComponent(qid)}`, down: r.down, up: r.up }] : [];
+  });
+  return { days, byKind, disliked };
+}
+
 // ---- AI usage ----
 export function aiUsage() {
   const from = dayStart() - 13 * DAY, keys = Array.from({ length: 14 }, (_, i) => dayKey(from + i * DAY));
@@ -463,7 +528,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'report.accept': 'accepted report', 'report.reject': 'rejected report', 'report.fix': 'marked fixed report',
   'comment.hide': 'hid comment', 'comment.unhide': 'restored comment', 'comment.delete': 'deleted comment',
   'poll.create': 'created poll', 'poll.close': 'closed poll', 'poll.reopen': 'reopened poll', 'poll.delete': 'deleted poll',
-  'aimcq.edit': 'edited AI question', 'aimcq.approve': 'approved AI question', 'aimcq.reject': 'rejected AI question',
+  'aimcq.edit': 'edited AI question', 'aimcq.approve': 'approved AI question', 'aimcq.reject': 'rejected AI question', 'aimcq.batch': 'batch-reviewed AI questions',
 };
 export const AREA_LABELS: Record<string, string> = { user: 'Accounts', login: 'Sign-ins', password: 'Passwords', announce: 'Announcements (old)', announcement: 'Announcements', report: 'Reports', comment: 'Comments', poll: 'Polls', aimcq: 'AI questions' };
 export const actionLabel = (a: string) => ACTION_LABELS[a] ?? a.replace(/[._]/g, ' ');

@@ -149,6 +149,25 @@ dialog.ai-dialog::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur
 .tc-hint { display: flex; align-items: center; gap: 0.75rem; min-height: 1.25rem; margin-top: 0.45rem; padding: 0 12rem 0 0.4rem; font-size: 0.75rem; color: var(--muted); }
 .tc-hint .kbd { font-size: 0.625rem; padding: 0 0.3rem; }
 
+/* Grounding badges, thumbs, follow-up chips, topic study aids */
+.ai-ground { display: inline-flex; align-items: center; gap: 0.3rem; height: 1.35rem; padding: 0 0.5rem; border-radius: 99px; font-size: 0.6875rem; font-weight: 500; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); }
+.ai-ground.is-unsourced { color: color-mix(in oklab, var(--signal) 80%, var(--ink)); border-color: color-mix(in oklab, var(--signal) 45%, transparent); background: color-mix(in oklab, var(--signal) 10%, transparent); }
+.ai-ground.is-grounded { color: color-mix(in oklab, var(--ok) 75%, var(--ink)); border-color: color-mix(in oklab, var(--ok) 35%, transparent); }
+.ai-thumbs { display: inline-flex; gap: 2px; }
+.ai-thumb { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 8px; color: var(--muted); transition: color var(--d1), background-color var(--d1), transform var(--d1) var(--ease); }
+.ai-thumb:hover { color: var(--ink); background: color-mix(in oklab, var(--ink) 7%, transparent); }
+.ai-thumb:active { transform: scale(calc(1 - 0.1 * var(--move))); }
+.ai-thumb[aria-pressed="true"] { color: var(--accent); background: var(--glow); }
+.ai-thumb.is-down[aria-pressed="true"] { color: var(--bad); background: color-mix(in oklab, var(--bad) 12%, transparent); }
+.ai-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
+.ai-chip { display: inline-flex; align-items: center; gap: 0.35rem; height: 1.95rem; padding: 0 0.7rem; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); font-size: 0.8125rem; color: var(--muted); transition: color var(--d1), border-color var(--d1), background-color var(--d1); }
+.ai-chip:hover:not(:disabled) { color: var(--ink); border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
+.ai-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.ai-chip.is-act { color: color-mix(in oklab, var(--accent) 72%, var(--ink)); border-color: color-mix(in oklab, var(--accent) 35%, var(--line)); }
+.ai-chip[aria-pressed="true"] { color: var(--ink); border-color: var(--accent); background: var(--glow); }
+.ai-aids-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.ts-suggest { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 @media (max-width: 1023px) { .tc { grid-template-columns: 14rem minmax(0, 1fr); gap: 1.25rem; } }
 @media (max-width: 767px) {
   .tc { grid-template-columns: minmax(0, 1fr); }

@@ -1,0 +1,70 @@
+---
+import Icon from '../../components/Icon.astro';
+import { aiQuality } from '../../server/admin';
+
+// How each AI feature is doing: volume, cache, failures, speed, grounding and what students voted.
+const q = aiQuality();
+const fmt = (n: number) => n.toLocaleString('en-GB');
+const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '–');
+const secs = (ms: number) => (ms ? `${(ms / 1000).toFixed(1)} s` : '–');
+---
+<section id="quality" class="panel mt-8 overflow-hidden" aria-labelledby="aiq-h">
+  <header class="flex flex-wrap items-end justify-between gap-2 px-5 pt-4">
+    <div>
+      <h3 id="aiq-h" class="text-sm font-medium">AI quality, last {q.days} days</h3>
+      <p class="mt-0.5 text-xs text-muted">Grounded means every citation is a fact the AI was given. Unsourced answers cited nothing and are worth spot-checking.</p>
+    </div>
+    <a href="/admin?tab=gaps" class="btn btn-sm btn-ghost"><Icon name="Search" size={15} />What the notes miss</a>
+  </header>
+  {q.byKind.length === 0 ? (
+    <p class="px-5 pb-5 pt-3 text-sm text-muted">Nothing yet. Each AI answer is logged here (without its text) once classmates use the tutor, explanations, study aids or the TOACS coach.</p>
+  ) : (
+    <div class="aiq-wrap" tabindex="0" role="region" aria-labelledby="aiq-h">
+      <table class="aiq">
+        <thead><tr>
+          <th scope="col">Feature</th><th scope="col" class="r">Answers</th><th scope="col" class="r">Shared</th><th scope="col" class="r">Failed</th><th scope="col" class="r">Avg time</th>
+          <th scope="col" class="r">Grounded</th><th scope="col" class="r">Not in notes</th><th scope="col" class="r">Unsourced</th><th scope="col" class="r">Votes</th>
+        </tr></thead>
+        <tbody>
+          {q.byKind.map((k) => (
+            <tr>
+              <th scope="row">{k.label}</th>
+              <td class="num r">{fmt(k.n)}</td>
+              <td class="num r text-muted">{pct(k.cached, k.n)}</td>
+              <td class:list={['num r', { 'text-bad': k.errors > 0 && k.errors / Math.max(1, k.n) > 0.1 }]}>{fmt(k.errors)}</td>
+              <td class="num r text-muted">{secs(k.ms)}</td>
+              <td class="num r">{pct(k.grounded, k.judged)}</td>
+              <td class="num r text-muted">{pct(k.notCovered, k.judged)}</td>
+              <td class:list={['num r', { 'text-signal': k.unsourced > 0 && k.unsourced / Math.max(1, k.judged) > 0.2 }]}>{pct(k.unsourced, k.judged)}</td>
+              <td class="num r"><span class="text-ok">{k.up}</span> / <span class="text-bad">{k.down}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+  {q.disliked.length > 0 && (
+    <div class="border-t border-line px-5 py-4">
+      <h4 class="text-xs font-medium uppercase tracking-wide text-faint">Shared answers students marked down</h4>
+      <p class="mt-0.5 text-xs text-muted">Open each and press regenerate to replace it for everyone.</p>
+      <ul class="mt-2 space-y-1.5 text-sm">
+        {q.disliked.map((d) => (
+          <li class="flex items-baseline gap-2"><span class="num shrink-0 text-xs text-bad">−{d.down}{d.up ? ` +${d.up}` : ''}</span><a href={d.href} class="min-w-0 truncate hover:text-accent">{d.label}</a></li>
+        ))}
+      </ul>
+    </div>
+  )}
+</section>
+
+<style>
+  #quality { scroll-margin-top: 8rem; }
+  .aiq-wrap { overflow-x: auto; overscroll-behavior-x: contain; padding: 0.5rem 0 0.75rem; }
+  .aiq { width: 100%; min-width: 44rem; font-size: 0.875rem; border-collapse: collapse; }
+  .aiq th, .aiq td { padding: 0.5rem 0.6rem; text-align: left; }
+  .aiq .r { text-align: right; }
+  .aiq th:first-child { padding-left: 1.25rem; }
+  .aiq td:last-child, .aiq th:last-child { padding-right: 1.25rem; }
+  .aiq thead th { font-size: 0.75rem; font-weight: 400; color: var(--faint); }
+  .aiq tbody tr { border-top: 1px solid var(--line); }
+  .aiq tbody th { font-weight: 500; }
+</style>

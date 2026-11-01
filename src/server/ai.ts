@@ -6,9 +6,11 @@ import { notify } from './notify';
 import { dayKey, text } from './personal';
 import { factById, facts, isEditionClash, mcqs, SYSTEMS, topicBySlug, type Fact, type Topic } from '../lib/data';
 import { mcqStem } from '../lib/sources';
+import { grounding, type Grounded } from '../lib/grounding';
+import { expandQuery } from '../lib/synonyms';
 
 // AI gateway (OpenCode Go, OpenAI-compatible): grounding on Lightbox facts, per-user daily caps, a global concurrency limit and a shared cache.
-export type Kind = 'explain' | 'dispute' | 'tutor' | 'generate' | 'mistake';
+export type Kind = 'explain' | 'dispute' | 'tutor' | 'generate' | 'mistake' | 'aid' | 'coach';
 export interface Msg { role: 'system' | 'user' | 'assistant'; content: string }
 export interface Quota { used: number; cap: number }
 export interface Cite { id: string; fact: string; label: string }
@@ -21,7 +23,7 @@ export const AI = { concurrent: 2, queueMs: 8_000, queueMax: 8, idleMs: 45_000, 
 export const MSG = { off: 'AI is not configured on this server.', unavailable: 'AI unavailable.', busy: 'AI is busy, try again shortly.', silent: 'AI did not answer.' };
 const GO = 'https://opencode.ai/zen/go/v1';
 const ZEN = 'https://opencode.ai/zen/v1/chat/completions';
-const CACHED = new Set<Kind>(['explain', 'dispute', 'mistake']);
+const CACHED = new Set<Kind>(['explain', 'dispute', 'mistake', 'aid']);
 
 // Read per call so a deploy (or a test) can change them without a restart. The key never leaves this module.
 const env = () => {
@@ -91,22 +93,41 @@ export async function* sseData(body: ReadableStream<Uint8Array>) {
 }
 
 export interface CallOpts { kind: Kind; userId: number; session: string; messages: Msg[]; stream?: boolean; maxTokens?: number; temperature?: number; signal?: AbortSignal; fresh?: boolean }
-export interface CallResult { text: string; cached: boolean; tokens: number; quota: Quota }
+export interface CallResult { text: string; cached: boolean; tokens: number; quota: Quota; event: number }
+
+const cacheKey = (kind: Kind, messages: Msg[]) => createHash('sha256').update(`${kind}|${env().model}|${JSON.stringify(messages)}`).digest('hex');
+
+// ---- telemetry: one row per answered, cached or failed request, for the admin "AI quality" panel. Never breaks a request. ----
+const EVENT_DAYS = 90;
+function logEvent(uid: number, kind: Kind, e: { cached?: boolean; ok?: boolean; tokens?: number; ms?: number }) {
+  try {
+    if (Math.random() < 0.02) db.prepare('DELETE FROM ai_events WHERE created_at < ?').run(now() - EVENT_DAYS * 86_400_000);
+    return Number(db.prepare('INSERT INTO ai_events (user_id, kind, cached, ok, tokens, ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(uid, kind, e.cached ? 1 : 0, e.ok === false ? 0 : 1, e.tokens ?? 0, Math.round(e.ms ?? 0), now()).lastInsertRowid);
+  } catch { return 0; }
+}
+/** Records how well an answer stood on the facts and returns that grounding. */
+export function markEvent(event: number, answer: string, cites: number): Grounded {
+  const g = grounding(answer, cites);
+  try { if (event) db.prepare('UPDATE ai_events SET cites = ?, grounded = ? WHERE id = ?').run(cites, g, event); } catch {}
+  return g;
+}
 
 /** Yields the answer as it arrives (whole when not streaming or cached) and returns the full result.
- *  Explain and dispute answers are cached for everyone; `fresh` regenerates. A request the AI never answered is not counted. */
+ *  Explain, dispute, mistake and topic-aid answers are cached for everyone; `fresh` regenerates. A request the AI never answered is not counted. */
 export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult> {
   const c = env();
   if (!c.key) throw new AiError(503, MSG.off);
-  const ck = CACHED.has(o.kind) ? createHash('sha256').update(`${o.kind}|${c.model}|${JSON.stringify(o.messages)}`).digest('hex') : null;
+  const ck = CACHED.has(o.kind) ? cacheKey(o.kind, o.messages) : null;
   if (ck && !o.fresh) {
     const hit = db.prepare('SELECT body FROM ai_cache WHERE key = ?').get(ck) as { body: string } | undefined;
     if (hit) {
       db.prepare('UPDATE ai_cache SET hits = hits + 1 WHERE key = ?').run(ck);
       yield hit.body;
-      return { text: hit.body, cached: true, tokens: 0, quota: quota(o.userId) };
+      return { text: hit.body, cached: true, tokens: 0, quota: quota(o.userId), event: logEvent(o.userId, o.kind, { cached: true }) };
     }
   }
+  const t0 = Date.now();
   assertReady(o.userId);
   if (busyUsers.has(o.userId)) throw new AiError(429, 'Wait for your current AI answer to finish.');
   busyUsers.add(o.userId);
@@ -165,9 +186,10 @@ export async function* callModel(o: CallOpts): AsyncGenerator<string, CallResult
     }
     if (!out.trim()) throw new AiError(502, MSG.silent);
     if (ck) db.prepare('INSERT OR REPLACE INTO ai_cache (key, kind, model, body, created_at, hits) VALUES (?, ?, ?, ?, ?, 0)').run(ck, o.kind, model, out, now());
-    return { text: out, cached: false, tokens, quota: quota(o.userId) };
+    return { text: out, cached: false, tokens, quota: quota(o.userId), event: logEvent(o.userId, o.kind, { tokens, ms: Date.now() - t0 }) };
   } catch (e) {
     if (charged && !out && !o.signal?.aborted) charge(o.userId, day, -1);
+    if (held && !o.signal?.aborted) logEvent(o.userId, o.kind, { ok: false, ms: Date.now() - t0 });
     throw o.signal?.aborted ? e : toAiError(e);
   } finally {
     clearTimeout(timer);
@@ -229,17 +251,24 @@ export async function sse(gen: AsyncGenerator<string, object>, ac: AbortControll
 const STOP = new Set('a an and are as at be by can do does for from has have how i in is it its me of on or the their there these this to was what when where which who why will with you your about explain tell give list'.split(' '));
 let index: MiniSearch | undefined;
 const searchIndex = () => (index ??= (() => {
+  // The note a fact sits under (section heading and bullet wording) often names it the way a student would ask.
+  const notes = new Map<string, string[]>();
+  for (const t of topicBySlug.values()) for (const s of t.sections) for (const b of s.bullets) for (const id of b.ids) {
+    const n = notes.get(id) ?? [];
+    if (n.length < 4) n.push(`${s.heading} ${b.text}`);
+    notes.set(id, n);
+  }
   const ms = new MiniSearch({
-    fields: ['fact', 'topics', 'kind', 'system'],
+    fields: ['fact', 'topics', 'kind', 'system', 'notes'],
     processTerm: (t) => { const w = t.toLowerCase(); return STOP.has(w) ? null : w; },
-    searchOptions: { boost: { fact: 2, topics: 1.5 }, prefix: (t) => t.length > 3, fuzzy: (t) => (t.length > 4 ? 0.2 : false) },
+    searchOptions: { boost: { fact: 2, topics: 1.5, notes: 1 }, prefix: (t) => t.length > 3, fuzzy: (t) => (t.length > 4 ? 0.2 : false) },
   });
-  ms.addAll(facts.map((f) => ({ id: f.id, fact: f.fact, topics: f.topics.map((s) => topicBySlug.get(s)?.title ?? '').join(' '), kind: f.kind, system: SYSTEMS[f.system]?.label ?? '' })));
+  ms.addAll(facts.map((f) => ({ id: f.id, fact: f.fact, topics: f.topics.map((s) => topicBySlug.get(s)?.title ?? '').join(' '), kind: f.kind, system: SYSTEMS[f.system]?.label ?? '', notes: (notes.get(f.id) ?? []).join(' ') })));
   return ms;
 })());
-/** Top-k facts for a question. */
+/** Top-k facts for a question; abbreviations and British/American spellings are expanded first. */
 export const retrieve = (q: string, k = AI.k): Fact[] =>
-  searchIndex().search(q.slice(0, 600)).slice(0, k).map((r) => factById.get(String(r.id))!).filter(Boolean);
+  searchIndex().search(expandQuery(q.slice(0, 600))).slice(0, k).map((r) => factById.get(String(r.id))!).filter(Boolean);
 
 export const topicFacts = (t: Topic) => [...new Set(t.sections.flatMap((s) => s.bullets.flatMap((b) => b.ids)))].map((id) => factById.get(id)!).filter(Boolean);
 const STATUS: Record<string, string> = { cited: 'verified, cited', agreed: 'verified', unchecked: 'UNCHECKED, not verified', disputed: 'DISPUTED, sources disagree' };
@@ -264,7 +293,7 @@ Use ONLY the Lightbox facts provided. Each fact starts with its id in square bra
 - Be concise and exam-focused. Plain text only: short paragraphs, "- " bullet lists and **bold** for key terms. No headings, tables, links or HTML.`;
 
 // ---- explain this fact ----
-export async function* explainFact(uid: number, factId: string, fresh = false, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; cached: boolean; quota: Quota }> {
+export async function* explainFact(uid: number, factId: string, fresh = false, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; cached: boolean; quota: Quota; grounded: Grounded }> {
   const f = factById.get(factId);
   if (!f) throw new AiError(404, 'Fact not found.');
   const near = [...facts.filter((x) => x !== f && x.topics.some((s) => f.topics.includes(s))), ...facts.filter((x) => x !== f && x.file === f.file && x.unit === f.unit)];
@@ -280,7 +309,8 @@ export async function* explainFact(uid: number, factId: string, fresh = false, s
   ];
   // Thinking tokens share max_tokens on the Go gateway, so the ceilings leave room for the reasoning pass.
   const r = yield* callModel({ kind: 'explain', userId: uid, session: `lightbox-u${uid}-explain`, messages, stream: true, maxTokens: 1400, temperature: 0.2, fresh, signal });
-  return { cites: citeInfo(citeIds(r.text, [f.id, ...rel.map((x) => x.id)])), cached: r.cached, quota: r.quota };
+  const cites = citeInfo(citeIds(r.text, [f.id, ...rel.map((x) => x.id)]));
+  return { cites, cached: r.cached, quota: r.quota, grounded: markEvent(r.event, r.text, cites.length) };
 }
 
 // ---- dispute summaries: only the item's recorded fields ----
@@ -323,7 +353,7 @@ export async function* summariseDispute(uid: number, type: unknown, id: unknown,
 /** Facts from the paper page the question was printed on. */
 export const mcqPageFacts = (m: { file: string; unit: number }) => facts.filter((f) => f.unit === m.unit && m.file.startsWith(mcqStem(f.file) + '__u'));
 
-export async function* explainMistake(uid: number, qid: string, choice: string, fresh = false, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; cached: boolean; quota: Quota }> {
+export async function* explainMistake(uid: number, qid: string, choice: string, fresh = false, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; cached: boolean; quota: Quota; grounded: Grounded }> {
   const m = mcqById.get(qid);
   if (!m || !m.key || !Object.hasOwn(m.options, m.key)) throw new AiError(404, 'That question has no answer key.');
   if (!Object.hasOwn(m.options, choice) || choice === m.key) throw new AiError(400, 'Pick the option you chose, not the key.');
@@ -341,13 +371,14 @@ export async function* explainMistake(uid: number, qid: string, choice: string, 
 Use only the record and the facts. If they do not explain it, say "Not covered in Lightbox notes yet." for that part instead of guessing.` },
   ];
   const r = yield* callModel({ kind: 'mistake', userId: uid, session: `lightbox-u${uid}-mistake`, messages, stream: true, maxTokens: 1400, temperature: 0.2, fresh, signal });
-  return { cites: citeInfo(citeIds(r.text, near.map((x) => x.id))), cached: r.cached, quota: r.quota };
+  const cites = citeInfo(citeIds(r.text, near.map((x) => x.id)));
+  return { cites, cached: r.cached, quota: r.quota, grounded: markEvent(r.event, r.text, cites.length) };
 }
 
 // ---- tutor chats ----
 export const CHAT = { title: 80, text: 2000, chats: 200, messages: 200 };
 export interface Chat { id: number; title: string; context: string | null; createdAt: number; updatedAt: number }
-export interface ChatMessage { id: number; role: 'user' | 'assistant'; content: string; cites: Cite[]; at: number }
+export interface ChatMessage { id: number; role: 'user' | 'assistant'; content: string; cites: Cite[]; at: number; grounded?: Grounded; vote?: -1 | 1 }
 const CHAT_COLS = 'id, title, context, created_at createdAt, updated_at updatedAt';
 export const listChats = (uid: number) => db.prepare(`SELECT ${CHAT_COLS} FROM ai_chats WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT ${CHAT.chats}`).all(uid) as Chat[];
 export const getChat = (uid: number, id: number) => db.prepare(`SELECT ${CHAT_COLS} FROM ai_chats WHERE id = ? AND user_id = ?`).get(id, uid) as Chat | undefined;
@@ -370,12 +401,20 @@ export const deleteChat = (uid: number, id: number) => db.prepare('DELETE FROM a
 const parseIds = (s: string) => { try { const a = JSON.parse(s); return Array.isArray(a) ? a.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } };
 export function chatMessages(uid: number, id: number): ChatMessage[] | null {
   if (!getChat(uid, id)) return null;
-  return (db.prepare('SELECT id, role, content, cites, created_at at FROM ai_messages WHERE chat_id = ? ORDER BY id').all(id) as { id: number; role: 'user' | 'assistant'; content: string; cites: string; at: number }[])
-    .map((m) => ({ ...m, cites: citeInfo(parseIds(m.cites)) }));
+  return (db.prepare(`SELECT m.id, m.role, m.content, m.cites, m.created_at at, f.vote FROM ai_messages m
+      LEFT JOIN ai_feedback f ON f.user_id = ? AND f.kind = 'tutor' AND f.ref = CAST(m.id AS TEXT)
+      WHERE m.chat_id = ? ORDER BY m.id`).all(uid, id) as { id: number; role: 'user' | 'assistant'; content: string; cites: string; at: number; vote: -1 | 1 | null }[])
+    .map(({ vote, ...m }) => {
+      const cites = citeInfo(parseIds(m.cites));
+      return m.role === 'assistant' ? { ...m, cites, grounded: grounding(m.content, cites.length), ...(vote ? { vote } : {}) } : { ...m, cites };
+    });
 }
 
+// A short question, or one that starts like a follow-up, keeps the facts the last answer cited in view.
+const FOLLOW_UP = /^(and|but|so|then|also|why|how|what about|what if|what else|and if|is it|is that|does it|does that|it|this|that|they|these|those|more|explain|elaborate|example|give|tell me more)\b/i;
+
 /** Streams the tutor's answer to a new question, or answers the last question again (`retry`). Saves both turns; a stopped answer keeps what was shown. */
-export async function* tutorReply(uid: number, chatId: number, input: { text?: unknown; retry?: unknown }, signal?: AbortSignal): AsyncGenerator<string, { id: number; cites: Cite[]; quota: Quota }> {
+export async function* tutorReply(uid: number, chatId: number, input: { text?: unknown; retry?: unknown }, signal?: AbortSignal): AsyncGenerator<string, { id: number; cites: Cite[]; quota: Quota; grounded: Grounded }> {
   const chat = getChat(uid, chatId);
   if (!chat) throw new AiError(404, 'Chat not found.');
   // The question is saved before any AI check, so { retry: true } can always answer it later (after a cap, outage or stop).
@@ -400,6 +439,11 @@ export async function* tutorReply(uid: number, chatId: number, input: { text?: u
   const pool = new Map<string, Fact>();
   for (const f of pinned) pool.set(f.id, f);
   for (const f of pinned) for (const x of facts) if (x.file === f.file && x.unit === f.unit && pool.size < 8) pool.set(x.id, x);
+  const ask = question.content.trim();
+  if (ask.length < 60 || FOLLOW_UP.test(ask)) {
+    const before = db.prepare("SELECT cites FROM ai_messages WHERE chat_id = ? AND role = 'assistant' AND id != ? ORDER BY id DESC LIMIT 1").get(chatId, stale) as { cites: string | null } | undefined;
+    for (const id of parseIds(before?.cites ?? '[]').slice(0, 4)) { const f = factById.get(id); if (f && pool.size < 12) pool.set(f.id, f); }
+  }
   for (const f of topic ? topicFacts(topic).slice(0, 14) : []) if (pool.size < 22) pool.set(f.id, f);
   for (const f of retrieve(`${question.content} ${prev}`, AI.k)) if (pool.size < 22) pool.set(f.id, f);
   const line = (f: Fact) => factLine(f) + (pinned.includes(f) ? `\n  Source: ${f.file} p${f.unit}${f.sources.length ? `; ${f.sources.join('; ')}` : ''}` : '');
@@ -420,12 +464,111 @@ export async function* tutorReply(uid: number, chatId: number, input: { text?: u
     let r = await it.next();
     while (!r.done) { answer += r.value; yield r.value; r = await it.next(); }
     saved = true;
-    return { ...save(answer), quota: r.value.quota };
+    const s = save(answer);
+    return { ...s, quota: r.value.quota, grounded: markEvent(r.value.event, answer, s.cites.length) };
   } finally {
     await it.return(undefined as never); // frees the gateway slot if the student pressed stop
     if (!saved && answer.trim()) save(`${answer.trimEnd()} …`);
   }
 }
+
+// ---- topic aids: a recap, memory hooks and exam angles per topic, made once and shared with the class ----
+export type AidKind = 'recap' | 'mnemonic' | 'examined';
+export const AIDS: Record<AidKind, { label: string; ask: string }> = {
+  recap: { label: '60-second recap', ask: `A 60-second recap of this topic for last-minute revision, under 170 words:
+- 5 to 7 "- " bullets with the most examinable points, each citing ids in square brackets.
+Then **One-liner:** a single sentence that sums the topic up.` },
+  mnemonic: { label: 'Memory hooks', ask: `Up to 4 memory hooks for the facts in this topic that are hardest to remember, under 150 words.
+Each as a "- " bullet: **the hook** (a mnemonic, picture or contrast), then what it encodes, citing ids in square brackets.
+Only encode facts given above; do not invent a mnemonic for anything they do not say.` },
+  examined: { label: 'How it is examined', ask: `How this topic is likely to be examined in FCPS-II, under 180 words, in exactly this shape:
+**MCQ angles:** 2 to 4 "- " bullets on what a stem would test and the trap in it, citing ids.
+**TOACS:** 1 to 3 "- " bullets on what an image station would show and the answer expected, citing ids.
+**Common traps:** 1 or 2 "- " bullets.
+Do not claim particular past papers or how often anything was asked.` },
+};
+export const isAidKind = (k: unknown): k is AidKind => typeof k === 'string' && Object.hasOwn(AIDS, k);
+
+function aidPrompt(slug: string, kind: AidKind) {
+  const t = topicBySlug.get(slug);
+  if (!t) throw new AiError(404, 'Topic not found.');
+  const fs = topicFacts(t).slice(0, 30);
+  if (!fs.length) throw new AiError(400, 'This topic has no facts yet.');
+  const messages: Msg[] = [
+    { role: 'system', content: RULES },
+    { role: 'user', content: `Lightbox topic: ${t.title}${t.oneLiner ? ` (${t.oneLiner})` : ''}\nIts facts:\n${fs.map(factLine).join('\n')}\n\n${AIDS[kind].ask}` },
+  ];
+  return { messages, ids: fs.map((f) => f.id) };
+}
+
+/** An aid someone already made, read without a request so the reader can show it straight away. */
+export function cachedAid(slug: string, kind: AidKind): { text: string; cites: Cite[]; grounded: Grounded } | null {
+  try {
+    const p = aidPrompt(slug, kind);
+    const hit = db.prepare('SELECT body FROM ai_cache WHERE key = ?').get(cacheKey('aid', p.messages)) as { body: string } | undefined;
+    if (!hit) return null;
+    const cites = citeInfo(citeIds(hit.body, p.ids));
+    return { text: hit.body, cites, grounded: grounding(hit.body, cites.length) };
+  } catch { return null; }
+}
+
+export async function* topicAid(uid: number, slug: string, kind: AidKind, fresh = false, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; cached: boolean; quota: Quota; grounded: Grounded }> {
+  const p = aidPrompt(slug, kind);
+  const r = yield* callModel({ kind: 'aid', userId: uid, session: `lightbox-u${uid}-aid`, messages: p.messages, stream: true, maxTokens: 1600, temperature: 0.3, fresh, signal });
+  const cites = citeInfo(citeIds(r.text, p.ids));
+  return { cites, cached: r.cached, quota: r.quota, grounded: markEvent(r.event, r.text, cites.length) };
+}
+
+// ---- TOACS coach: compares a student's private answer with the station's facts and suggests a grade ----
+export type CoachGrade = 'got' | 'partial' | 'missed';
+export const COACH_TEXT = 1500;
+const GRADE_WORDS: [RegExp, CoachGrade][] = [[/partly|partial/i, 'partial'], [/missed|not yet/i, 'missed'], [/got it|got/i, 'got']];
+/** The grade named on the "Suggested grade:" line, if any. */
+export const coachGrade = (answer: string): CoachGrade | null => {
+  const line = answer.match(/suggested grade:?\**\s*:?\s*([^\n]*)/i)?.[1] ?? '';
+  return GRADE_WORDS.find(([re]) => re.test(line))?.[1] ?? null;
+};
+
+export async function* coachAnswer(uid: number, station: { caption: string; facts: { id: string }[] }, answer: unknown, signal?: AbortSignal): AsyncGenerator<string, { cites: Cite[]; quota: Quota; grounded: Grounded; grade: CoachGrade | null }> {
+  const a = text(answer, COACH_TEXT);
+  if (!a || a.length < 3) throw new AiError(400, `Write your answer first (up to ${COACH_TEXT} characters).`);
+  const fs = station.facts.map((f) => factById.get(f.id)).filter((f): f is Fact => !!f).slice(0, 12);
+  if (!fs.length) throw new AiError(400, 'This station has no facts to check your answer against.');
+  const messages: Msg[] = [
+    { role: 'system', content: RULES + '\nYou are marking a TOACS image station. Judge the answer only against the facts given; be fair to wording that means the same thing.' },
+    { role: 'user', content: `Station caption: ${station.caption}\nFacts for this image:\n${fs.map(factLine).join('\n')}\n\nThe candidate wrote:\n"""${a}"""\n\n` +
+      `Mark it in under 140 words, in exactly this shape:
+**Suggested grade:** Got it, Partly or Missed.
+**You got:** what they said that matches the facts, citing ids, or "Nothing yet."
+**You missed:** the key points from the facts they left out or got wrong, citing ids, or "Nothing important."
+**Tip:** one short line on how to answer this kind of station.` },
+  ];
+  const r = yield* callModel({ kind: 'coach', userId: uid, session: `lightbox-u${uid}-coach`, messages, stream: true, maxTokens: 1400, temperature: 0.1, signal });
+  const cites = citeInfo(citeIds(r.text, fs.map((f) => f.id)));
+  return { cites, quota: r.quota, grounded: markEvent(r.event, r.text, cites.length), grade: coachGrade(r.text) };
+}
+
+// ---- thumbs up/down on AI answers: one vote per person per answer; 0 clears it ----
+export const FEEDBACK_KINDS = ['tutor', 'explain', 'mistake', 'aid', 'coach'] as const;
+export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
+const refOk: Record<FeedbackKind, (uid: number, ref: string) => boolean> = {
+  tutor: (uid, ref) => /^\d+$/.test(ref) && !!db.prepare("SELECT 1 FROM ai_messages m JOIN ai_chats c ON c.id = m.chat_id WHERE m.id = ? AND m.role = 'assistant' AND c.user_id = ?").get(Number(ref), uid),
+  explain: (_, ref) => factById.has(ref),
+  mistake: (_, ref) => { const [q, c] = ref.split(':'); return !!mcqById.get(q) && Object.hasOwn(mcqById.get(q)!.options, c ?? ''); },
+  aid: (_, ref) => { const [s, k] = ref.split(':'); return topicBySlug.has(s) && isAidKind(k); },
+  coach: (_, ref) => /^\d+:.{1,150}$/.test(ref),
+};
+export function setFeedback(uid: number, kind: unknown, ref: unknown, vote: unknown): string | null {
+  if (typeof kind !== 'string' || !(FEEDBACK_KINDS as readonly string[]).includes(kind)) return 'Unknown kind.';
+  if (typeof ref !== 'string' || !ref || ref.length > 160 || !refOk[kind as FeedbackKind](uid, ref)) return 'Unknown answer.';
+  if (vote === 0) { db.prepare('DELETE FROM ai_feedback WHERE user_id = ? AND kind = ? AND ref = ?').run(uid, kind, ref); return null; }
+  if (vote !== 1 && vote !== -1) return 'Vote must be 1, -1 or 0.';
+  db.prepare('INSERT INTO ai_feedback (user_id, kind, ref, vote, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id, kind, ref) DO UPDATE SET vote = excluded.vote, created_at = excluded.created_at')
+    .run(uid, kind, ref, vote, now());
+  return null;
+}
+export const myVote = (uid: number, kind: FeedbackKind, ref: string) =>
+  ((db.prepare('SELECT vote FROM ai_feedback WHERE user_id = ? AND kind = ? AND ref = ?').get(uid, kind, ref) as { vote: -1 | 1 } | undefined)?.vote ?? 0);
 
 // ---- generated MCQs ----
 export interface GenMcq { stem: string; options: Record<string, string>; key: string; explanation: string; fact_ids: string[] }
@@ -475,6 +618,14 @@ export function parseMcqs(answer: string, allowed: Set<string>) {
 }
 
 export const MAX_PENDING = 30;
+export const MAX_PENDING_ADMIN = 150; // admins fill whole topics in bulk
+
+// Near-duplicate stems: the same content words, give or take a few, as a bank question or one already queued.
+const stemWords = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)));
+const overlap = (a: Set<string>, b: Set<string>) => { let i = 0; for (const w of a) if (b.has(w)) i++; return i / (a.size + b.size - i || 1); };
+let bankStems: Set<string>[] | undefined;
+export const isNearDuplicate = (stem: string, others: Set<string>[]) => { const w = stemWords(stem); return others.some((o) => overlap(w, o) > 0.8); };
+
 export async function generateMcqs(uid: number, o: { topicSlug?: unknown; factIds?: unknown; n?: unknown }, signal?: AbortSignal) {
   const n = o.n;
   if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 5) throw new AiError(400, 'Ask for 1 to 5 questions.');
@@ -483,8 +634,10 @@ export async function generateMcqs(uid: number, o: { topicSlug?: unknown; factId
   const ids = t ? topicFacts(t).map((f) => f.id) : Array.isArray(o.factIds) && o.factIds.length <= 40 ? o.factIds.filter((x): x is string => typeof x === 'string') : [];
   const src = ids.map((id) => factById.get(id)).filter((f): f is Fact => !!f && f.status === 'verified').slice(0, 24);
   if (!src.length) throw new AiError(400, 'There are no verified facts here to write questions from.');
-  if ((db.prepare("SELECT COUNT(*) n FROM ai_mcqs WHERE created_by = ? AND status = 'pending'").get(uid) as { n: number }).n >= MAX_PENDING)
-    throw new AiError(429, `You have ${MAX_PENDING} questions waiting for review. Generate more once an admin has reviewed them.`);
+  const admin = (db.prepare('SELECT role FROM users WHERE id = ?').get(uid) as { role: string } | undefined)?.role === 'admin';
+  const max = admin ? MAX_PENDING_ADMIN : MAX_PENDING;
+  if ((db.prepare("SELECT COUNT(*) n FROM ai_mcqs WHERE created_by = ? AND status = 'pending'").get(uid) as { n: number }).n >= max)
+    throw new AiError(429, `You have ${max} questions waiting for review. Generate more once an admin has reviewed them.`);
   const messages: Msg[] = [
     { role: 'system', content: 'You write single-best-answer MCQs for the FCPS-II radiology exam. You reply with JSON only.' },
     { role: 'user', content: `Verified Lightbox facts:\n${src.map(factLine).join('\n')}\n\n` +
@@ -499,13 +652,19 @@ Reply with JSON only, no prose and no code fences, in this shape:
   let answer = '';
   for await (const d of callModel({ kind: 'generate', userId: uid, session: `lightbox-u${uid}-generate`, messages, stream: true, maxTokens: 900 + n * 500, temperature: 0.5, signal })) answer += d;
   const { items, rejected } = parseMcqs(answer, new Set(src.map((f) => f.id)));
-  const keep = items.slice(0, n);
+  const seen = [...(bankStems ??= mcqs.map((m) => stemWords(m.stem))),
+    ...(db.prepare("SELECT stem FROM ai_mcqs WHERE status != 'rejected'").all() as { stem: string }[]).map((r) => stemWords(r.stem))];
+  const fresh: GenMcq[] = [];
+  for (const q of items) if (!isNearDuplicate(q.stem, seen)) { fresh.push(q); seen.push(stemWords(q.stem)); }
+  const dupes = items.length - fresh.length;
+  const keep = fresh.slice(0, n);
+  if (!keep.length && dupes) throw new AiError(409, 'Every question the AI wrote repeats one already in the bank or the review queue. Try again or pick another topic.');
   if (!keep.length) throw new AiError(502, 'The AI did not return usable questions. Try again.');
   const ins = db.prepare('INSERT INTO ai_mcqs (created_by, topic_slug, fact_ids, stem, options, key, explanation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const saved = db.transaction(() => keep.map((q) => ({ id: Number(ins.run(uid, t?.slug ?? null, JSON.stringify(q.fact_ids), q.stem, JSON.stringify(q.options), q.key, q.explanation, now()).lastInsertRowid), ...q })))();
   notify('admins', { kind: 'ai-mcq', title: `${saved.length} AI MCQ${saved.length === 1 ? '' : 's'} await review`, body: t ? `From ${t.title}` : '', href: '/admin?tab=ai' }, uid);
   audit(uid, 'ai.generate', `${saved.length} pending${t ? ` · ${t.slug}` : ''}`);
-  return { items: saved.map((q) => ({ ...q, facts: citeInfo(q.fact_ids) })), rejected: rejected + items.length - keep.length, quota: quota(uid) };
+  return { items: saved.map((q) => ({ ...q, facts: citeInfo(q.fact_ids) })), rejected: rejected + fresh.length - keep.length, dupes, quota: quota(uid) };
 }
 
 // ---- approved AI MCQ bank ----

@@ -1,16 +1,54 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as RME } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Check, Eye, LoaderCircle, Minus, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Check, Eye, LoaderCircle, Minus, Sparkles, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { navigate } from 'astro:transitions/client';
 import { toast } from '../../scripts/toast';
+import { AiState, AiText, Grounding, Thinking, Thumbs, quotaText, useAiStream, useReveal } from './AiText';
 
 export type Station = { file: string; src: string; w: number; h: number; caption: string; source: string; facts: { id: string; fact: string; label: string; labelText: string }[] };
 type Grade = 'got' | 'partial' | 'missed';
-interface Props { id: number; seconds: number; stations: Station[]; grades: Record<string, Grade> }
+interface Props { id: number; seconds: number; stations: Station[]; grades: Record<string, Grade>; ai?: boolean }
 
 const ease = [0.16, 1, 0.3, 1] as const;
 const GRADES: [Grade, string, string, typeof Check][] = [['got', 'Got it', 'ok', Check], ['partial', 'Partly', 'signal', Minus], ['missed', 'Missed', 'bad', X]];
 const R = 27, C = 2 * Math.PI * R;
+
+/** The AI coach: marks the private answer against this page's facts and suggests a grade. The student still grades. */
+function Coach({ exam, file, text, onGrade }: { exam: number; file: string; text: () => string; onGrade: (g: Grade | null) => void }) {
+  const s = useAiStream('/api/ai/coach');
+  const live = s.phase === 'wait' || s.phase === 'stream';
+  const shown = useReveal(s.text, true);
+  const revealing = shown.length < s.text.length;
+  useEffect(() => { onGrade(s.phase === 'done' ? s.done?.grade ?? null : null); }, [s.phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ask = () => {
+    const a = text().trim();
+    if (a.length < 3) { toast('Write your answer first, then ask the coach.', 'bad'); document.getElementById('ts-answer')?.focus(); return; }
+    s.run({ exam, item: file, answer: a });
+  };
+  if (s.phase === 'idle') {
+    return <button type="button" className="ai-chip is-act mt-4" onClick={ask}><Sparkles size={13} aria-hidden="true" />Ask the AI coach to mark my answer</button>;
+  }
+  return (
+    <section className="ai-surface mt-4 p-3.5" aria-label="AI coach">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="ai-mark"><Sparkles size={12} aria-hidden="true" />AI coach</span>
+        <span className="ai-note">Not verified. You decide the grade.</span>
+      </header>
+      <div className="mt-2.5 text-sm" aria-live="polite" aria-busy={live || revealing}>
+        {s.phase === 'wait' && <Thinking label="Checking your answer against the facts…" />}
+        {s.text && <AiText text={shown} cites={s.phase === 'done' ? s.done?.cites ?? [] : null} caret={live || revealing} />}
+        {s.phase === 'error' && <div className={s.text ? 'mt-3' : ''}><AiState status={s.status} error={s.error} onRetry={ask} /></div>}
+      </div>
+      {s.phase === 'done' && !revealing && (
+        <footer className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-2.5">
+          <Grounding grounded={s.done?.grounded} cites={s.done?.cites?.length} />
+          <p className="ai-note">{quotaText(s.done?.quota)}</p>
+          <span className="ml-auto"><Thumbs kind="coach" refId={`${exam}:${file}`} /></span>
+        </footer>
+      )}
+    </section>
+  );
+}
 
 export default function ToacsStation(p: Props) {
   const reduce = useReducedMotion();
@@ -21,6 +59,7 @@ export default function ToacsStation(p: Props) {
   const [zoom, setZoom] = useState<{ x: number; y: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState('');
+  const [suggest, setSuggest] = useState<Grade | null>(null);
   const t0 = useRef(0);
   const used = useRef(0);
   const answer = useRef<HTMLTextAreaElement>(null);
@@ -38,7 +77,7 @@ export default function ToacsStation(p: Props) {
 
   useEffect(() => {
     t0.current = performance.now();
-    setLeft(p.seconds); setRevealed(false); setZoom(null);
+    setLeft(p.seconds); setRevealed(false); setZoom(null); setSuggest(null);
     if (answer.current) answer.current.value = '';
     // The grade buttons just unmounted: keep keyboard focus on the station.
     if (refocus.current) { refocus.current = false; head.current?.focus(); }
@@ -126,7 +165,7 @@ export default function ToacsStation(p: Props) {
           </div>
         </div>
 
-        <label className="mt-5 block text-sm" htmlFor="ts-answer">Your answer <span className="text-muted">(private, never saved)</span></label>
+        <label className="mt-5 block text-sm" htmlFor="ts-answer">Your answer <span className="text-muted">{p.ai ? '(private; sent to the AI only if you ask the coach, never saved)' : '(private, never saved)'}</span></label>
         <textarea id="ts-answer" ref={answer} className={`field mt-2 resize-none py-2 leading-relaxed transition-[height] ${revealed ? '!h-16' : '!h-24'}`} placeholder="Findings and diagnosis…" />
 
         <AnimatePresence mode="wait" initial={false}>
@@ -150,13 +189,15 @@ export default function ToacsStation(p: Props) {
                   ))}
                 </ul>
               ) : <p className="mt-1.5 text-sm text-muted">No model answer in the source; compare with the caption only.</p>}
+              {p.ai && s.facts.length > 0 && <Coach key={s.file} exam={p.id} file={s.file} text={() => answer.current?.value ?? ''} onGrade={setSuggest} />}
               <div className="mt-5 grid grid-cols-3 gap-2" role="group" aria-label="Grade yourself">
                 {GRADES.map(([g, label, c, I], k) => (
-                  <button key={g} type="button" className={`grade grade-${c}`} onClick={() => grade(g)} disabled={busy}>
-                    {busy ? <LoaderCircle size={16} className="animate-spin" /> : <I size={17} />}<span>{label}</span><span className="kbd max-sm:hidden">{k + 1}</span>
+                  <button key={g} type="button" className={`grade grade-${c}${suggest === g ? ' ts-suggest' : ''}`} onClick={() => grade(g)} disabled={busy} title={suggest === g ? 'The AI coach suggests this grade' : undefined}>
+                    {busy ? <LoaderCircle size={16} className="animate-spin" /> : <I size={17} />}<span>{label}</span>{suggest === g && <span className="sr-only"> (AI coach suggests)</span>}<span className="kbd max-sm:hidden">{k + 1}</span>
                   </button>
                 ))}
               </div>
+              {suggest && <p className="mt-2 text-xs text-muted">The outlined grade is the coach's suggestion. Press the one you agree with.</p>}
             </motion.div>
           )}
         </AnimatePresence>

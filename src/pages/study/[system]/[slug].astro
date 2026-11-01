@@ -8,6 +8,8 @@ import CollectMenu from '../../../components/islands/CollectMenu';
 import ReportButton from '../../../components/islands/ReportButton';
 import Thread from '../../../components/islands/Thread';
 import AiGenerate from '../../../components/islands/AiGenerate';
+import TopicAids, { type Aid, type AidKind } from '../../../components/islands/TopicAids';
+import { aiEnabled, cachedAid, myVote } from '../../../server/ai';
 import { cardByFact, factById, mcqs, topics, topicBySlug, SYSTEMS, LABELS } from '../../../lib/data';
 import { deckStatus, factStates, noteVisit, visitPos, type FactState } from '../../../server/progress';
 import { compareWith, inPlayer } from '../../../server/study';
@@ -47,6 +49,14 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
 const peers = compareWith(t);
 const printedAt = new Date(Date.now() + 5 * 3_600_000).toISOString().slice(0, 10);
 const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+// AI study aids someone already made come with the page, so they open instantly and cost no request.
+const aiOn = aiEnabled();
+const AID_KINDS: AidKind[] = ['recap', 'mnemonic', 'examined'];
+const aids: Partial<Record<AidKind, Aid>> = {}, aidVotes: Partial<Record<AidKind, -1 | 0 | 1>> = {};
+for (const k of AID_KINDS) {
+  const a = fs.length ? cachedAid(t.slug, k) : null;
+  if (a) { aids[k] = a; aidVotes[k] = myVote(Astro.locals.user!.id, 'aid', `${t.slug}:${k}`); }
+}
 ---
 <App title={t.title} crumbs={[{ label: 'Study', href: '/study' }, { label: SYSTEMS[t.system].label, href: `/study/${t.system}` }]}>
   <div class="readbar" aria-hidden="true" data-no-print></div>
@@ -89,6 +99,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
           <AiGenerate client:visible topicSlug={t.slug} compact />
           <ReportButton client:visible itemType="topic" itemId={t.slug} compact />
         </div>
+        {fs.length > 0 && (aiOn || Object.keys(aids).length > 0) && (
+          <div data-no-print><TopicAids client:visible slug={t.slug} enabled={aiOn} admin={Astro.locals.user!.role === 'admin'} cached={aids} votes={aidVotes} /></div>
+        )}
       </header>
 
       {t.sections.map((s, si) => (

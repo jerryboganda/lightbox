@@ -6,6 +6,7 @@ import Icon from '../../../components/Icon.astro';
 import ScoreRing from '../../../components/ScoreRing.astro';
 import ToacsStation, { type Station } from '../../../components/islands/ToacsStation';
 import { answersOf, configOf, load, toacsStations, type Grade } from '../../../server/exams';
+import { aiEnabled } from '../../../server/ai';
 import { LABELS, shortFile } from '../../../lib/data';
 import { dur, when } from '../../../lib/quiz';
 import '../../../styles/practice.css';
@@ -40,7 +41,7 @@ const toRepeat = stations.length - count('got');
   {!e.finished_at ? (
     <>
       <h1 class="sr-only">{e.title}</h1>
-      <ToacsStation client:load id={e.id} seconds={configOf(e).seconds ?? 60} stations={stations.map(({ title, ...s }) => s as Station)} grades={grades} />
+      <ToacsStation client:load id={e.id} seconds={configOf(e).seconds ?? 60} stations={stations.map(({ title, ...s }) => s as Station)} grades={grades} ai={aiEnabled()} />
     </>
   ) : (
     <>

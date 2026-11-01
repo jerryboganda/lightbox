@@ -3,7 +3,7 @@
 import { useId, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, RefreshCw, Sparkles, X } from 'lucide-react';
-import { AiState, AiText, Thinking, quotaText, useAiStream, useReveal } from './AiText';
+import { AiState, AiText, Grounding, Thinking, Thumbs, quotaText, useAiStream, useReveal } from './AiText';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -52,7 +52,11 @@ export default function AiMistake({ qid, choice, keyLetter }: { qid: string; cho
               {s.phase === 'error' && <div className={s.text ? 'mt-3' : ''}><AiState status={s.status} error={s.error} onRetry={() => start()} /></div>}
             </div>
             {s.phase === 'done' && !revealing && (
-              <p className="ai-note mt-4 border-t border-line pt-3">{s.done?.cached ? 'Shared with the class · no AI request used' : quotaText(s.done?.quota)}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                <Grounding grounded={s.done?.grounded} cites={s.done?.cites?.length} />
+                <p className="ai-note">{s.done?.cached ? 'Shared with the class · no AI request used' : quotaText(s.done?.quota)}</p>
+                <span className="ml-auto"><Thumbs kind="mistake" refId={`${qid}:${choice}`} /></span>
+              </div>
             )}
           </motion.section>
         )}
