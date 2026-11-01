@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT) || 4400; // parallel worktrees each take their own port
+// A real OPENCODE_API_KEY in the shell must never reach the test server; only the localhost mock gateway may enable AI.
+const MOCK_AI = /^http:\/\/(localhost|127\.0\.0\.1):\d+/.test(process.env.AI_BASE_URL ?? '');
 export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: false,
@@ -16,6 +18,6 @@ export default defineConfig({
     command: 'node -e "require(\'fs\').rmSync(\'data/e2e.db\',{force:true})" && node dist/server/entry.mjs',
     url: `http://localhost:${PORT}/api/health`,
     reuseExistingServer: false,
-    env: { PORT: String(PORT), HOST: 'localhost', DB_PATH: './data/e2e.db', ADMIN_USERNAME: 'e2e', ADMIN_DISPLAY_NAME: 'E2E Tester', ADMIN_INITIAL_PASSWORD: 'e2e-initial-pass-1' },
+    env: { PORT: String(PORT), HOST: 'localhost', DB_PATH: './data/e2e.db', ADMIN_USERNAME: 'e2e', ADMIN_DISPLAY_NAME: 'E2E Tester', ADMIN_INITIAL_PASSWORD: 'e2e-initial-pass-1', ...(MOCK_AI ? {} : { OPENCODE_API_KEY: '' }) },
   },
 });

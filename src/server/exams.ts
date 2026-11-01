@@ -8,7 +8,7 @@ import { HISTORIES, matcher, PAPERS, STATUSES, type Filters, type Mine, type Poo
 export type Mode = 'quiz' | 'exam' | 'toacs';
 export type Grade = 'got' | 'partial' | 'missed';
 export interface Item { q: string; o?: string } // q: MCQ qid or atlas image file; o: shuffled option letters
-export interface ExamRow { id: number; user_id: number; mode: Mode; title: string; config: string; items: string; time_limit: number | null; started_at: number; finished_at: number | null; score: number | null; total: number | null }
+export interface ExamRow { id: number; user_id: number; mode: Mode; title: string; config: string; items: string; time_limit: number | null; started_at: number; finished_at: number | null; score: number | null; total: number | null; challenge?: string | null }
 export interface AnswerRow { item_id: string; choice: string | null; correct: number | null; flagged: number; ms: number; answered_at: number | null }
 
 const GRACE = 5000; // network slack after the deadline

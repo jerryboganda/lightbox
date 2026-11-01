@@ -104,7 +104,7 @@ test('daily goals edit from the analytics page and show on home', async ({ page 
   await expect(panel.getByText(`/${next}`, { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await expect(page.locator('.gr-item', { hasText: 'MCQs answered' })).toContainText(`/ ${next}`);
   await page.getByRole('link', { name: /Exam readiness \d+ out of 100/ }).click();
   await expect(page).toHaveURL(/\/analytics$/);

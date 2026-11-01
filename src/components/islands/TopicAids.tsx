@@ -55,7 +55,7 @@ export default function TopicAids({ slug, enabled, admin = false, cached, votes 
       <div className="ai-aids-tabs" role="group" aria-label="AI study aids for this topic">
         <span className="ai-mark"><Sparkles size={12} aria-hidden="true" />AI study aids</span>
         {available.map(({ kind: k, label, Icon }) => (
-          <button key={k} type="button" className="ai-chip" aria-pressed={kind === k} aria-controls={pid} onClick={() => pick(k)}>
+          <button key={k} type="button" className="ai-chip" aria-pressed={kind === k} aria-controls={kind ? pid : undefined} onClick={() => pick(k)}>
             <Icon size={14} aria-hidden="true" />{label}{got[k]?.cached && <span className="sr-only"> (ready)</span>}
           </button>
         ))}
