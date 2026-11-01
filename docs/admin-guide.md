@@ -6,7 +6,11 @@ This guide covers running Lightbox for the class:
 - [Announcements](#announcements)
 - [Moderation](#moderation)
 - [Class polls](#class-polls)
+- [Weekly challenge and class insights](#weekly-challenge-and-class-insights)
 - [The AI queue](#the-ai-queue)
+- [Content gaps](#content-gaps)
+- [Health](#health)
+- [Daily reminders](#daily-reminders)
 - [Exports and the pipeline](#exports-and-the-pipeline)
 - [Backups and restore](#backups-and-restore)
 - [Rotating the OpenCode key](#rotating-the-opencode-key)
@@ -22,7 +26,18 @@ There is no self sign-up. You issue every account from **Admin › Add a classma
    - **Display name:** what classmates see on comments and the leaderboard. It falls back to the username.
    - **Role:** *member* for classmates, *admin* for anyone who helps you moderate.
 2. **Send the temporary password.** Lightbox shows it once, in the form `abcd-efgh-jkmn`. The **Copy login details** button copies a ready-made message with the link, username and password. Send it privately, in person or by direct message.
-3. **First sign-in:** the classmate must choose their own password before they can do anything else. It needs at least 10 characters, mixing letters with numbers or symbols.
+3. **First sign-in:** the classmate must choose their own password before they can do anything else. It needs at least 10 characters, mixing letters with numbers or symbols. They then answer three quick questions (exam date, daily time and confidence) that set their goals and their daily plan.
+
+### Setting up the whole class
+
+The **Users** tab opens with a set-up checklist that ticks itself off as you go:
+
+1. **Create an account for each classmate.** Choose **Several** to paste the whole class at once, one person per line.
+2. **Share the logins.** The password dialog can:
+   - **print cut-out login slips**, one per person, with the link, username, temporary password and first-sign-in steps;
+   - **send each person a WhatsApp message** with the same details, using the button beside their name.
+3. **Chase anyone who has not signed in.** The checklist shows how many people haven't chosen a password yet and filters the list to them.
+4. **Post a welcome announcement.** Mention the weekly challenge in Class.
 
 The **Users** list has these actions on each row:
 
@@ -63,23 +78,72 @@ Class polls let everyone vote on a disputed MCQ's key. You can also run a custom
 
 Poll results are opinion, not evidence. Lightbox keeps showing the pipeline's verdict and evidence beside them.
 
+## Weekly challenge and class insights
+
+Both run on their own; there's nothing to set up.
+
+- **Weekly challenge:** every Monday (Pakistan time), Lightbox picks 15 keyed, undisputed past-paper MCQs, spread across systems and clear of the last four weeks' questions. Everyone gets the same set, one minute per question, with one attempt each. Attempts whose time runs out are scored as they stand. The board on **Class** ranks the week's finishers by score, then speed, and Home nudges people who haven't finished.
+- **Where the class slips:** an anonymous summary on **Class** of the questions most people get wrong (with the most popular wrong answer) and the topics with the most forgotten cards and wrong answers over the last 30 days. It never shows names, and an item appears only once at least 3 different people contributed. Use it to choose what to go over in a teaching session.
+
 ## The AI queue
 
 AI features run through the OpenCode Go gateway (see the `OPENCODE_API_KEY` and `AI_*` settings in the README):
 
 - **Explain this fact**
-- **The tutor**
+- **The tutor**, with one-tap next steps
+- **Why B, not C?** after a wrong MCQ answer
+- **Topic study aids:** a 60-second recap, memory hooks and how the topic is examined
+- **The TOACS coach**
 - **Disputed-evidence summaries**
 - **Generate MCQs**
 
 All of them are labelled as AI, cite the Lightbox fact IDs they used, and never replace verified content. Answers are cached, and each person has a daily cap (`AI_DAILY_CAP`).
 
-Generated MCQs go into the approval queue as **pending**. For each one, check the stem, the options, the key and the explanation against the cited facts. Then:
+Generated MCQs go into the approval queue on **Admin › AI review** as **pending**. For each one, check the stem, the options, the key and the explanation against the cited facts. You can edit them inline. Then:
 
 - **Approve** it, and it appears in `/practice/ai` for everyone.
-- **Reject** it, and it stays out of practice.
+- **Reject** it, with a reason the creator sees, and it stays out of practice.
+
+To work faster:
+
+- **Review several at once:** tick questions (or **Choose all**), then **Approve chosen** or **Reject chosen** with one reason.
+- **Fill thin topics with AI questions:** pick topics (or **Pick the thinnest**), choose how many per topic, and **Generate**. Lightbox writes each topic's questions from its verified facts only, drops near-duplicates of questions already in the bank, and sends the rest to the queue. A daily cap or a missing key stops the run.
+
+**AI quality** on the same tab shows each AI feature's volume over recent days: answers, how many were shared from the cache, failures, average time, and grounding. **Grounded** means every citation is a fact the AI was given. **Unsourced** answers cited nothing and are worth spot-checking. It also shows the students' thumbs up and down. Only the counts are logged, never the answer text.
 
 Approvals and rejections are written to the audit log. If the gateway is down or the key is missing, the AI features say "AI unavailable" and the rest of Lightbox works as normal.
+
+## Content gaps
+
+**Admin › Content gaps** shows what the notes are missing, from how the class actually uses them:
+
+- **Tutor questions the notes could not answer.**
+- **Questions the class gets wrong.**
+- **Cards the class keeps forgetting.**
+- **Read topics with no past-paper question.**
+- **Unverified facts people are reading.**
+
+Hand these to the pipeline as candidates for new facts, better cards or verification. Lightbox itself never changes content.
+
+## Health
+
+**Admin › Health** shows how the server is doing since its last restart:
+
+- Uptime, errors and warnings in the last 24 hours, memory, database size and the Node version.
+- **Failing routes**, **slowest routes** and **busiest routes**.
+- **Recent warnings and errors**, including JavaScript errors reported by students' browsers (rate-limited).
+
+The server writes JSON log lines to standard output. Set `LOG_LEVEL` to `info` for more detail while debugging.
+
+## Daily reminders
+
+Students can turn on one study reminder a day under **Account › Study settings**. Reminders need a VAPID key pair on the server:
+
+1. On a development machine, run `npm run vapid`. It prints three lines.
+2. Paste them into `/opt/lightbox/.env` as `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (a `mailto:` or `https:` contact).
+3. Restart the web container.
+
+Without the keys, the reminder setting is hidden. Pushes arrive empty and the app asks the server what to show, so no study data passes through the browser vendors' push services. Keep the same keys: changing them silently breaks everyone's existing subscriptions.
 
 ## Exports and the pipeline
 

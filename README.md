@@ -12,39 +12,46 @@ Classmates sign in with usernames that the admin issues. There is no self sign-u
 
 | Area | Routes | What it does |
 |---|---|---|
-| Home | `/` | Daily goals, cards due, streak, "continue where you left off", announcements. |
-| Study | `/study`, `/study/<system>`, `/study/<system>/<topic>` | 183 topic notes in 13 systems. Every line shows its status and fact IDs, and the contents list follows your scroll. |
-| | `/study/<system>/print`, `/study/compare` | Printable notes for a system. Two to four topics side by side. |
+| Home | `/` | **Smart today**: pick a time budget and get an ordered plan (due cards, mistakes, new cards, a quiz, a weak topic) where each step opens a ready session. Also daily goals, the streak with freezes, projected exam readiness, "continue where you left off", class nudges and announcements. First sign-in asks three onboarding questions (exam date, daily time, confidence) that seed the goals and the plan. |
+| Study | `/study`, `/study/<system>`, `/study/<system>/<topic>` | 183 topic notes in 13 systems. Every line shows its status and fact IDs, and the contents list follows your scroll. The reader adds mastery dots, **Learn this topic**, a blur-to-recall **Self-test**, **Read aloud**, a **Quick check**, AI study aids, and resumes where you stopped. |
+| | `/study/<system>/print`, `/study/compare` | Printable notes for a system. Two to four topics side by side. A system page can also be **saved offline** as a pack. |
+| | `/fix/<topic>` | Fix-it flow for a weak topic: key points, a drill, a three-question check and a recovery score. |
 | Facts | `/facts`, `/facts/<id>` | Fact explorer with filters saved in the URL, and a page per fact with its evidence and neighbouring facts. |
 | Sources | `/sources`, `/sources/<file>/<unit>` | The original page text next to the facts taken from it. |
 | Atlas | `/atlas` | 69 images, each with its exact source caption. Lightbox adds no diagnosis. |
-| Practice | `/practice`, `/practice/cards` | FSRS flashcards, with 20 new cards a day plus your own cards. |
-| | `/practice/mcq` | The past-paper MCQ bank, answered blind, with the key and evidence shown after you answer. |
+| Practice | `/practice`, `/practice/cards` | FSRS flashcards with a per-student desired retention, new cards paced to the exam date, interleaved queues and leech detection, plus your own cards. |
+| | `/practice/mcq` | The past-paper MCQ bank, answered blind, with a sure/unsure/guess confidence, the key and evidence shown after you answer, and an AI **"Why B, not C?"** that explains your mistake. Wrong answers and lucky guesses join the **mistake bank** (`?set=mistakes`) and come back after 1, 3, 7 and 21 days. |
 | | `/practice/builder`, `/practice/builder?mode=exam`, `/practice/exam/<id>` | Quiz builder and timed exam simulator, with a results review. |
-| | `/practice/toacs`, `/practice/toacs/<id>` | Timed TOACS image stations, self-graded against the source captions. |
+| | `/practice/toacs`, `/practice/toacs/<id>` | Timed TOACS image stations, self-graded against the source captions, with an optional AI coach that suggests a grade. |
 | | `/practice/ai` | AI-generated MCQs that an admin has approved. |
-| Analytics | `/analytics` | Activity heatmap, mastery by system, accuracy trend, forgetting curve, exam readiness and weak topics. |
-| Library | `/library`, `/library/c/<id>`, `/library/shared` | Bookmarks, weak spots, collections (private or shared with the class), notes, highlights, your own cards and a 30-day history. |
+| Analytics | `/analytics` | Activity heatmap, mastery by system, accuracy trend, forgetting curve, confidence calibration, exam readiness with an exam-day projection, and weak topics with a Fix-it link. |
+| Library | `/library`, `/library/c/<id>`, `/library/shared` | Bookmarks, weak spots, collections (private or shared with the class), notes, highlights (which can become flashcards), your own cards and a 30-day history. |
+| | `/library/high-yield` | **My high-yield sheet**: a printable one-page sheet built from your own lapses, Again ratings, wrong answers and weak marks. |
 | Review | `/review`, `/review/pipeline` | Disputed MCQs, paper-versus-source items, edition clashes, unchecked facts, MCQs not answered blind, unreadable pages. A pipeline explorer. |
-| Class | `/class`, `/notifications` | Comment threads, upvotes, error reports, class polls on disputed MCQs, the leaderboard and in-app notifications. |
-| Tutor | `/tutor` | AI tutor chat grounded in Lightbox facts. Answers cite fact IDs, are labelled as AI and are capped per day. |
+| Class | `/class`, `/notifications` | Comment threads, upvotes, error reports, class polls on disputed MCQs, the leaderboard and in-app notifications. The **weekly challenge** (the same 15 keyed questions for everyone, one minute each, with a ranked board) and anonymous **class insights** ("where the class slips", shown only once 3 or more people contributed). |
+| Tutor | `/tutor` | AI tutor chat grounded in Lightbox facts. Answers cite fact IDs, carry a grounding badge, are labelled as AI and are capped per day. One-tap next steps follow each answer. |
 | Export | Library, collection, system and account pages | Anki `.apkg` decks, CSV and "download my data". See [Exports](#exports). |
-| Account | `/account` | Password, display name, theme, motion, density, text size, and "download my data". |
-| Admin | `/admin` | Accounts, announcements and the audit log, plus moderation, polls and the AI queue (see [the admin guide](docs/admin-guide.md)). |
+| Account | `/account` | Password, display name, theme, motion, density, text size, desired retention, a daily Web Push reminder, offline packs and "download my data". |
+| Admin | `/admin` | Accounts with an onboarding kit (login slips and WhatsApp messages), announcements and the audit log, plus moderation, polls, the AI queue with bulk generation and batch review, AI quality, content gaps and health (see [the admin guide](docs/admin-guide.md)). |
 
 These are available on every page:
 
-- **Ctrl K palette:** search facts, topics, MCQs and captions.
+- **Ctrl K palette:** search facts, topics, MCQs and captions. It understands radiology abbreviations (RML, SUFE, DCIS) and British or American spellings, can narrow to the current topic or system, and suggests "Did you mean" when nothing matches.
+- **Keyboard shortcuts:** press `?` for the list. `g` then `h`, `s`, `f`, `p`, `a`, `l`, `c` or `t` jumps to Home, Study, Facts, Practice, Analytics, Library, Class or Tutor.
 - **Highlighter:** select text to highlight it, add a note, make a flashcard, copy it with its source or search for it.
 - **Focus timer:** a 25/5 or 50/10 Pomodoro tied to your daily goals.
 - **Focus mode** and **light/dark theme**.
-- **Installable offline app.**
+- **Installable offline app**, with due-count badges on the mobile tab bar.
 
-AI also appears in three other places:
+AI also appears in these places:
 
-- "Explain" on a fact page.
+- "Explain" on a fact page, and "Why B, not C?" after a wrong MCQ answer.
+- Topic study aids in the reader: a 60-second recap, memory hooks and how the topic is examined.
+- The TOACS coach, which marks your private answer against the page's facts.
 - Summaries of disputed evidence in the review centre.
 - "Generate MCQs" in the topic reader.
+
+Each AI answer shows how well it stood on the notes and has thumbs up/down; admins see the votes under AI quality.
 
 Guides: [student guide](docs/student-guide.md) · [admin guide](docs/admin-guide.md).
 
@@ -76,6 +83,8 @@ Every page needs a sign-in except `/login`. Health checks and the offline assets
 | `AI_DAILY_CAP` | AI requests per person per day. Default 30. |
 | `AI_FALLBACK` | Set to `zen` to fall back to the paid OpenCode Zen gateway when Go fails. Empty means no fallback. |
 | `AI_FALLBACK_MODEL` | The model to use on the fallback gateway. |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Daily study reminders (Web Push). Run `npm run vapid` and paste its three lines. Left empty, the reminder setting is hidden. |
+| `LOG_LEVEL` | Server log threshold: `warn` (default), `info` or `error`. Logs are JSON lines; warnings and errors also feed **Admin › Health**. |
 
 Copy `.env.example` to `.env` for local development. Keys belong only in `.env` locally and in `/opt/lightbox/.env` on the server, never in the repository.
 
@@ -128,13 +137,15 @@ The builder (`src/server/anki.ts`) writes a legacy schema-11 `collection.anki2` 
 - **Pages:** network-first, falling back to the cached copy or `/offline`.
 - **`/api/data/*` and `/api/search-index`:** stale-while-revalidate.
 - **Every other API**, including exports, AI, notifications and comments: never cached or intercepted.
+- **Offline packs:** **Save offline** on a system page (`src/scripts/offline.ts`) stores its topic pages, print view and every asset they need in the `lb-packs` cache. The service worker answers offline page loads from any cache, packs included. Packs survive version bumps and are listed, with their size, under **Account › Offline packs**.
+- **Push:** reminders arrive empty and the worker asks `/api/push/summary` what to say, so no study data passes through the push service.
 
-To force clients to refresh their caches, bump `V` in `sw.js`. Signing out clears the caches. The app manifest has shortcuts to flashcards, a timed exam, the tutor and the library.
+To force clients to refresh their caches, bump `V` in `sw.js` (currently `lb-v3`). Signing out clears every cache, packs included. The app manifest has shortcuts to flashcards, a timed exam, the tutor and the library.
 
 ## Test
 
 ```bash
-npm test                      # Vitest: data counts, auth, scheduling, personal layer, exams, analytics, exports
+npm test                      # Vitest: data counts, auth, scheduling, personal layer, exams, analytics, exports, planner, streaks, challenge, search
 npx astro check
 npm run build
 npm run e2e                   # Playwright: desktop and mobile, light and dark, axe accessibility scans

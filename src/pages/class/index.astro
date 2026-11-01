@@ -190,7 +190,7 @@ const RULES = [
                   {insights.missed.map((m) => (
                     <li>
                       <a href={m.href} class="feed-row">
-                        <span class="miss num" aria-label={`${m.pct}% wrong`}>{m.pct}%</span>
+                        <span class="miss num">{m.pct}%<span class="sr-only"> wrong</span></span>
                         <span class="min-w-0 flex-1">
                           <span class="snippet !mt-0">{m.stem}</span>
                           <span class="mt-1 block text-[11px] text-faint">{plural(m.people, 'person', 'people')} answered{m.trap && <> · trap: <span class="text-muted">{m.trap.key}. {m.trap.label}</span> ({m.trap.pct}% of wrong answers)</>}</span>

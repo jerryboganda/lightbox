@@ -106,7 +106,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       {TABS.map((n) => (
         <a href={n.href} class:list={['tab', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined}>
           {active(n.href) && <span class="tab-ind" transition:name="tab-ind" />}
-          <span class="tab-ic"><Icon name={n.icon} size={20} />{badge(n.href) && <span class="tab-badge num" aria-label={`${dueNow} due`}>{badge(n.href)}</span>}</span><span>{n.label}</span>
+          <span class="tab-ic"><Icon name={n.icon} size={20} />{badge(n.href) && <span class="tab-badge num"><span class="sr-only">, </span>{badge(n.href)}<span class="sr-only"> due</span></span>}</span><span>{n.label}</span>
         </a>
       ))}
       <button type="button" class:list={['tab', { on: MORE.some((n) => active(n.href)) }]} popovertarget="moresheet" aria-label="More pages">
