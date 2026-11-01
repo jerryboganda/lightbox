@@ -20,3 +20,7 @@ Consult these guides before working on related tasks:
 - [Adding or managing content](https://docs.astro.build/en/guides/content-collections/)
 - [Adding styles or using Tailwind](https://docs.astro.build/en/guides/styling/)
 - [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
+
+## Codexify companion
+
+Before updating, reinstalling, or troubleshooting Codexify's browser companion on this workstation, read [the companion recovery runbook](docs/codexify-browser-companion-recovery.md). It records the local bundle fix, background-window task, verification steps, and the original archive's backup status.
