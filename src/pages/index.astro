@@ -13,7 +13,8 @@ import { plan } from '../server/planner';
 import { getProfile } from '../server/profile';
 import { mistakeCounts } from '../server/mistakes';
 import { pacing } from '../server/pacing';
-import { examHref, recent } from '../server/exams';
+import { challengeStatus, examHref, recent } from '../server/exams';
+import { feed, unvotedPolls } from '../server/class';
 
 const user = Astro.locals.user!;
 const d = dashboard(user.id);
@@ -63,6 +64,17 @@ const pages = d.recent.map((r) => ({
   sub: r.kind === 'fact' ? 'Fact' : r.kind === 'source' ? 'Source page' : r.pos && r.pos > 0.05 && r.pos < 0.95 ? `Topic note · ${Math.round(r.pos * 100)}% read` : 'Topic note',
 }));
 const cont = [...open, ...pages].slice(0, 5);
+// This week in class: the challenge, polls waiting for your vote and the newest discussion.
+const ch = challengeStatus(user.id);
+const pollsWaiting = unvotedPolls(user.id);
+const latest = feed(1)[0];
+const nudges = [
+  ch.n > 0 && (ch.mine?.finished
+    ? { href: '/class#challenge', icon: 'Swords', text: `Weekly challenge: ${ch.mine.score}/${ch.mine.total}${ch.mine.rank ? `, #${ch.mine.rank} of ${ch.players}` : ''}` }
+    : { href: ch.mine ? ch.mine.href : '/class#challenge', icon: 'Swords', text: ch.mine ? 'Finish this week’s challenge' : `Weekly challenge: ${ch.n} questions${ch.players ? `, ${ch.players} done` : ''}`, hot: true }),
+  pollsWaiting > 0 && { href: '/class#polls-h', icon: 'Vote', text: `${pollsWaiting} class poll${pollsWaiting === 1 ? '' : 's'} need your vote`, hot: true },
+  latest && { href: latest.href, icon: 'MessagesSquare', text: `${latest.author.split(/\s+/)[0]} ${latest.reply ? 'replied on' : 'on'} ${latest.title}` },
+].filter(Boolean) as { href: string; icon: string; text: string; hot?: boolean }[];
 ---
 <App title="Home">
   {welcome && <div class="reveal mb-5 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 px-4 py-3 text-sm text-ok" role="status"><Icon name="CircleCheck" size={18} />Password saved. You're all set.</div>}
@@ -74,6 +86,9 @@ const cont = [...open, ...pages].slice(0, 5);
       <p class="mt-2 text-muted">
         {hasDue ? <><span class="num text-ink">{d.dueNow}</span> cards due and <span class="num text-ink">{d.newToday}</span> new today</> : 'Nothing due right now. Take a topic or an MCQ set.'}
         {d.streak > 0 && <> · <span class="text-signal"><span class="num">{d.streak}</span>-day streak</span></>}
+        {d.streak > 0 && d.freezes > 0 && <span class="text-faint" title="A freeze covers one missed day so your streak survives. You earn one every 7 days, up to 2."> <Icon name="Snowflake" size={13} class="inline-block align-[-2px]" /><span class="num">{d.freezes}</span><span class="sr-only"> streak freeze{d.freezes === 1 ? '' : 's'}</span></span>}
+        {d.streakHeld && <> · <span class="text-signal">study today to keep it (a freeze is covering yesterday)</span></>}
+        {!d.streakHeld && d.frozenRecently && d.streak > 0 && <span class="text-faint"> · a freeze saved your streak this week</span>}
         {mist.due > 0 && <> · <a href="/practice/mcq?set=mistakes" class="text-bad hover:underline"><span class="num">{mist.due}</span> mistake{mist.due === 1 ? '' : 's'} to retry</a></>}
       </p>
       <div class="mt-5 flex flex-wrap gap-2.5">
@@ -91,6 +106,13 @@ const cont = [...open, ...pages].slice(0, 5);
   </section>
 
   <div class="reveal mt-6" style="--i:1"><SmartToday client:load initial={todayPlan} /></div>
+
+  {nudges.length > 0 && (
+    <nav class="nudges reveal mt-4" style="--i:1" aria-label="This week in class">
+      <span class="nudge-k"><Icon name="UsersRound" size={14} />This week</span>
+      {nudges.map((n) => <a href={n.href} class:list={['nudge', { hot: n.hot }]}><Icon name={n.icon} size={14} /><span class="truncate">{n.text}</span></a>)}
+    </nav>
+  )}
 
   {announcements.length > 0 && (
     <section class="reveal mt-5 flex flex-col gap-2" style="--i:1" aria-label="Announcements">
@@ -204,6 +226,12 @@ const cont = [...open, ...pages].slice(0, 5);
 </script>
 
 <style>
+  .nudges { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .nudge-k { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.6875rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+  .nudge { display: inline-flex; align-items: center; gap: 0.4rem; max-width: 100%; min-height: 2.25rem; padding: 0 0.8rem; border-radius: 99px; border: 1px solid var(--line); font-size: 0.8125rem; color: var(--muted); transition: color var(--d1), border-color var(--d1); }
+  .nudge:hover { color: var(--ink); border-color: var(--line-strong); }
+  .nudge.hot { color: var(--ink); border-color: color-mix(in oklab, var(--signal) 40%, var(--line)); background: color-mix(in oklab, var(--signal) 8%, transparent); }
+  .nudge.hot > :global(svg) { color: var(--signal); }
   .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: end; }
   .activity { width: 15rem; }
   .bar { flex: 1; height: 100%; border-radius: 3px 3px 1px 1px; background: color-mix(in oklab, var(--accent) 30%, var(--line)); transform-origin: bottom; transform: scaleY(var(--h)); animation: grow var(--d4) var(--ease) both; animation-delay: calc(var(--i) * 25ms + 150ms); }

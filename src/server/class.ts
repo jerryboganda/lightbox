@@ -1,8 +1,9 @@
 import { db, now } from './db';
 import { notify } from './notify';
-import { DAY, dayKey, dayStart } from './analytics';
+import { DAY, dayKey, dayStart, factTopics, mcqTopics } from './analytics';
+import { frozenByUser } from './streaks';
 import { intId, item, itemInfo, text, validPath } from './personal';
-import { factById, mcqs } from '../lib/data';
+import { factById, mcqs, topicBySlug } from '../lib/data';
 import type { SessionUser } from './auth';
 
 // Class layer: discussion threads, upvotes, reports, notifications, polls and the leaderboard.
@@ -212,6 +213,9 @@ const OPEN_POLLS = `FROM polls p WHERE p.closed = 0 AND (p.closes_at IS NULL OR 
   AND (p.item_type = 'custom' OR EXISTS (SELECT 1 FROM poll_votes v WHERE v.poll_id = p.id AND v.created_at > ?))`;
 export const openPolls = (limit = 6) =>
   db.prepare(`SELECT p.* ${OPEN_POLLS} ORDER BY p.item_type = 'custom' DESC, p.created_at DESC LIMIT ?`).all(now(), now() - 14 * DAY, limit) as PollRow[];
+/** Open polls this person has not voted in yet (Home nudge). */
+export const unvotedPolls = (uid: number) =>
+  (db.prepare(`SELECT COUNT(*) n ${OPEN_POLLS} AND NOT EXISTS (SELECT 1 FROM poll_votes m WHERE m.poll_id = p.id AND m.user_id = ?)`).get(now(), now() - 14 * DAY, uid) as { n: number }).n;
 
 // ---- class hub ----
 export function classStats() {
@@ -251,14 +255,16 @@ function compute(board: Board): Standing[] {
   const ups = by<{ id: number; n: number }>(`SELECT c.user_id id, COUNT(*) n FROM votes v JOIN comments c ON c.id = CAST(v.item_id AS INTEGER)
     WHERE v.item_type = 'comment' AND c.deleted = 0 AND c.hidden = 0 AND v.created_at >= ? GROUP BY c.user_id`, since);
   // Streak: consecutive days with a review or an answer, counted back from today (or yesterday), as on the home page.
+  // Days bridged by a streak freeze keep the run alive without counting.
+  const frozen = frozenByUser();
   const days = new Map<number, Set<string>>();
   for (const r of db.prepare(`SELECT user_id id, t FROM (SELECT user_id, reviewed_at t FROM srs_log WHERE reviewed_at >= ? UNION ALL SELECT user_id, created_at FROM mcq_attempts WHERE created_at >= ?)
     GROUP BY user_id, (t + 18000000) / 86400000`).all(today - 31 * DAY, today - 31 * DAY) as { id: number; t: number }[])
     (days.get(r.id) ?? days.set(r.id, new Set()).get(r.id)!).add(dayKey(r.t));
   const streak = (id: number) => {
-    const s = days.get(id);
+    const s = days.get(id), f = frozen.get(id);
     let n = 0;
-    if (s) for (let d = s.has(dayKey(t)) ? t : t - DAY; s.has(dayKey(d)); d -= DAY) n++;
+    if (s) for (let d = s.has(dayKey(t)) ? t : t - DAY; s.has(dayKey(d)) || f?.has(dayKey(d)); d -= DAY) if (s.has(dayKey(d))) n++;
     return n;
   };
   const users = db.prepare('SELECT id, display_name name, role FROM users WHERE disabled = 0').all() as { id: number; name: string; role: string }[];
@@ -281,3 +287,39 @@ export function leaderboard(board: Board) {
   return rows;
 }
 export const clearLeaderboard = () => memo.clear();
+
+// ---- class insights ----
+// Aggregate and anonymous: no names, and nothing is shown unless at least INSIGHT_MIN different people contributed.
+export const INSIGHT_MIN = 3;
+export interface Insights {
+  missed: { qid: string; stem: string; href: string; pct: number; people: number; trap: { key: string; label: string; pct: number } | null }[];
+  topics: { slug: string; title: string; href: string; people: number; again: number; wrong: number }[];
+  people: number; answers: number; since: number;
+}
+let insightMemo: { at: number; v: Insights } | null = null;
+export function classInsights(): Insights {
+  if (insightMemo && insightMemo.at > now() - 5 * 60_000) return insightMemo.v;
+  const since = now() - 30 * DAY;
+  const rows = db.prepare(`SELECT qid, COUNT(DISTINCT user_id) people, COUNT(*) n, SUM(correct = 0) wrong FROM mcq_attempts
+    WHERE correct IS NOT NULL AND created_at >= ? GROUP BY qid HAVING people >= ? AND wrong > 0`).all(since, INSIGHT_MIN) as { qid: string; people: number; n: number; wrong: number }[];
+  const trapQ = db.prepare(`SELECT choice, COUNT(*) n FROM mcq_attempts WHERE qid = ? AND correct = 0 AND created_at >= ? GROUP BY choice ORDER BY n DESC LIMIT 1`);
+  const missed = rows.filter((r) => mcqById.has(r.qid)).map((r) => ({ ...r, rate: r.wrong / r.n }))
+    .sort((a, b) => b.rate - a.rate || b.people - a.people).slice(0, 6).map((r) => {
+      const m = mcqById.get(r.qid)!, t = trapQ.get(r.qid, since) as { choice: string; n: number } | undefined;
+      return { qid: r.qid, stem: clip(m.stem, 160), href: `/practice/mcq?q=${encodeURIComponent(r.qid)}`, pct: Math.round(r.rate * 100), people: r.people,
+        trap: t && m.options[t.choice] ? { key: t.choice, label: clip(m.options[t.choice], 80), pct: Math.round((t.n / r.wrong) * 100) } : null };
+    });
+  // Topics where several people pressed Again or got an MCQ wrong in the last 30 days.
+  const ev = new Map<string, { users: Set<number>; again: number; wrong: number }>();
+  const add = (slugs: readonly string[] | Iterable<string> | undefined, uid: number, k: 'again' | 'wrong') => {
+    for (const s of slugs ?? []) { let e = ev.get(s); if (!e) ev.set(s, (e = { users: new Set(), again: 0, wrong: 0 })); e.users.add(uid); e[k]++; }
+  };
+  for (const r of db.prepare('SELECT user_id u, fact_id f FROM srs_log WHERE rating = 1 AND reviewed_at >= ?').all(since) as { u: number; f: string }[]) add(factTopics.get(r.f), r.u, 'again');
+  for (const r of db.prepare('SELECT user_id u, qid FROM mcq_attempts WHERE correct = 0 AND created_at >= ?').all(since) as { u: number; qid: string }[]) add(mcqTopics.get(r.qid), r.u, 'wrong');
+  const topics = [...ev].filter(([s, e]) => e.users.size >= INSIGHT_MIN && topicBySlug.has(s))
+    .map(([slug, e]) => { const t = topicBySlug.get(slug)!; return { slug, title: t.title, href: `/study/${t.system}/${slug}`, people: e.users.size, again: e.again, wrong: e.wrong }; })
+    .sort((a, b) => b.people - a.people || b.again + 2 * b.wrong - (a.again + 2 * a.wrong)).slice(0, 6);
+  const tot = db.prepare('SELECT COUNT(DISTINCT user_id) people, COUNT(*) n FROM mcq_attempts WHERE created_at >= ?').get(since) as { people: number; n: number };
+  insightMemo = { at: now(), v: { missed, topics, people: tot.people, answers: tot.n, since } };
+  return insightMemo.v;
+}

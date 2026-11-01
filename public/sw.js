@@ -1,7 +1,8 @@
 // Lightbox service worker: hashed assets cache-first, pages network-first with an offline fallback.
 // Only /api/data/* and /api/search-index are cached; every other API (exports, AI, notifications, comments, writes) goes straight to the network.
-const V = 'lb-v2';
-const STATIC = `${V}-static`, PAGES = `${V}-pages`, DATA = `${V}-data`;
+// Offline packs (src/scripts/offline.ts) live in PACKS, which survives version bumps; signing out still clears everything.
+const V = 'lb-v3';
+const STATIC = `${V}-static`, PAGES = `${V}-pages`, DATA = `${V}-data`, PACKS = 'lb-packs';
 const PRECACHE = ['/offline', '/favicon.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/maskable-512.png', '/icons/apple-180.png'];
 
 self.addEventListener('install', (e) => {
@@ -9,7 +10,7 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => !k.startsWith(V)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== PACKS && !k.startsWith(V)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('message', (e) => {

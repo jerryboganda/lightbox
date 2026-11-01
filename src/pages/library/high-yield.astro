@@ -1,0 +1,147 @@
+---
+import App from '../../layouts/App.astro';
+import Icon from '../../components/Icon.astro';
+import Status from '../../components/Status.astro';
+import { LABELS } from '../../lib/data';
+import { highYield } from '../../server/highyield';
+
+const user = Astro.locals.user!;
+const { topics, facts } = highYield(user.id);
+const sources = [...new Set(facts.flatMap((f) => f.fact.sources))].sort();
+const printedAt = new Date(Date.now() + 5 * 3_600_000).toISOString().slice(0, 10);
+const empty = !topics.length && !facts.length;
+---
+<App title="My high-yield sheet" crumbs={[{ label: 'Library', href: '/library' }]}>
+  <div class="bar reveal" style="--i:0" data-no-print>
+    <div class="min-w-0 flex-[1_1_18rem]">
+      <h1 class="text-lg font-medium">My high-yield sheet</h1>
+      <p class="text-sm text-muted">Built from your own lapses, Again ratings, wrong answers and weak marks. It changes as you improve. Choose "Save as PDF" as the printer to keep a copy.</p>
+    </div>
+    {!empty && <button type="button" class="btn btn-primary shrink-0" data-print><Icon name="Printer" size={16} />Print or save as PDF</button>}
+  </div>
+
+  {empty ? (
+    <div class="panel doc reveal text-center" style="--i:1">
+      <Icon name="Sparkles" size={28} class="mx-auto text-accent" />
+      <h2 class="mt-3 text-lg font-medium">Nothing to put on your sheet yet</h2>
+      <p class="mx-auto mt-1 max-w-md text-sm text-muted">Review flashcards and answer MCQs for a few days. The facts you miss and the topics you get wrong will gather here as a one-page revision sheet.</p>
+      <div class="mt-4 flex flex-wrap justify-center gap-2">
+        <a href="/practice/cards" class="btn btn-primary"><Icon name="Layers" size={16} />Review flashcards</a>
+        <a href="/practice/mcq" class="btn"><Icon name="Target" size={16} />Practise MCQs</a>
+      </div>
+    </div>
+  ) : (
+    <article class="doc panel reveal" style="--i:1">
+      <header class="cover">
+        <p class="kick">Lightbox · FCPS-II radiology · personal revision sheet</p>
+        <h2 class="title">High-yield for {user.displayName.split(/\s+/)[0]}</h2>
+        <p class="mt-2 text-muted"><span class="num">{topics.length}</span> weak topic{topics.length === 1 ? '' : 's'} and <span class="num">{facts.length}</span> fact{facts.length === 1 ? '' : 's'} you keep missing, from your last 90 days of study.</p>
+        <p class="mt-1 text-sm text-muted">Generated {printedAt}. Lines marked <span class="hot-tag">Missed</span> hold a fact you lapsed on, rated Again or marked weak. Every line keeps its verification status and fact IDs.</p>
+        <dl class="key">
+          {(['cited', 'agreed', 'unchecked', 'disputed'] as const).map((l) => <div><dt><Status label={l} /></dt><dd>{LABELS[l].hint}</dd></div>)}
+        </dl>
+        {topics.length > 0 && (
+          <>
+            <h3 class="toc-h">Weak topics, worst first</h3>
+            <ol class="toc">{topics.map((t) => <li><a href={`#${t.slug}`}>{t.title}</a> <span class="toc-why">{t.reason}</span></li>)}</ol>
+          </>
+        )}
+      </header>
+
+      {facts.length > 0 && (
+        <section class="topic" aria-labelledby="facts-h">
+          <h2 id="facts-h" class="t-title">Facts you keep missing</h2>
+          <p class="t-one">Read these first. Each one cost you a review recently.</p>
+          <ol class="flist">
+            {facts.map((f) => (
+              <li>
+                <p>{f.fact.fact}</p>
+                <p class="meta-line"><Status label={f.fact.label} /><span class="num ids">{f.fact.id}</span><span>{f.place}</span><span class="why">{f.why}</span></p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {topics.map((t) => (
+        <section class="topic" id={t.slug} aria-labelledby={`h-${t.slug}`}>
+          <p class="kick">{t.systemLabel} · {t.reason}</p>
+          <h2 id={`h-${t.slug}`} class="t-title mt-1"><a href={t.href} class="hover:text-accent">{t.title}</a></h2>
+          <p class="t-one">{t.oneLiner}</p>
+          {t.sections.map((s) => (
+            <>
+              <h3 class="s-head">{s.heading}</h3>
+              <ul class="bullets">
+                {s.lines.map((b) => (
+                  <li class:list={['pbullet', { hot: b.hot }]}>
+                    <span>{b.text}</span>
+                    <span class="meta">{b.hot && <span class="hot-tag">Missed</span>}<Status label={b.label} />{b.ids.length > 0 && <span class="num ids">{b.ids.join(', ')}</span>}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ))}
+          {t.hidden > 0 && <p class="more" data-no-print><a href={t.href}>{t.hidden} more line{t.hidden === 1 ? '' : 's'} on the topic page</a></p>}
+        </section>
+      ))}
+
+      {sources.length > 0 && (
+        <section class="topic refs" aria-labelledby="refs-h">
+          <h2 id="refs-h" class="t-title">Sources</h2>
+          <ul class="refl">{sources.map((u) => <li>{u}</li>)}</ul>
+          <p class="foot">Printed from Lightbox on {printedAt}. Personal sheet: only you can see it.</p>
+        </section>
+      )}
+    </article>
+  )}
+</App>
+
+<script>
+  function init() { document.querySelectorAll<HTMLElement>('[data-print]').forEach((b) => { b.onclick = () => window.print(); }); }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
+
+<style>
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; max-width: 52rem; margin: 0 auto; }
+  .doc { max-width: 52rem; margin: 1.25rem auto 0; padding: clamp(1.25rem, 4vw, 3.25rem); }
+  .kick { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .title { margin-top: 0.5rem; font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); font-weight: 500; line-height: 1.1; }
+  .key { display: grid; gap: 0.4rem; margin-top: 1.5rem; padding: 1rem; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 0.8125rem; }
+  .key div { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); align-items: center; gap: 0.75rem; }
+  .key dd { color: var(--muted); }
+  .toc-h { margin-top: 2rem; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+  .toc { margin-top: 0.6rem; list-style: decimal; padding-left: 2.25rem; font-size: 0.9rem; display: grid; gap: 0.2rem; }
+  .toc li::marker { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+  .toc a:hover { color: var(--accent); }
+  .toc-why { font-size: 0.75rem; color: var(--muted); }
+  .topic { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--line); scroll-margin-top: 5rem; }
+  .t-title { font-size: 1.45rem; font-weight: 500; line-height: 1.2; }
+  .t-one { margin-top: 0.4rem; color: var(--muted); }
+  .s-head { margin-top: 1.4rem; font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.03em; color: var(--ink); }
+  .bullets { margin-top: 0.5rem; display: grid; gap: 0.55rem; padding-left: 1.1rem; list-style: disc; }
+  .bullets li::marker { color: var(--muted); }
+  .bullets li.hot::marker { color: var(--signal); }
+  .meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-left: 0.45rem; vertical-align: 1px; }
+  .ids { font-size: 0.6875rem; color: var(--muted); }
+  .hot-tag { display: inline-flex; align-items: center; height: 1.15rem; padding: 0 0.4rem; border-radius: 99px; font-size: 0.6875rem; font-weight: 600; color: var(--signal); border: 1px solid color-mix(in oklab, var(--signal) 45%, transparent); }
+  .flist { margin-top: 1rem; display: grid; gap: 0.9rem; padding-left: 1.6rem; list-style: decimal; }
+  .flist li::marker { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+  .meta-line { margin-top: 0.25rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.6rem; font-size: 0.75rem; color: var(--muted); }
+  .why { color: var(--signal); }
+  .more { margin-top: 0.8rem; font-size: 0.8125rem; }
+  .more a { color: var(--accent); }
+  .refl { margin-top: 0.4rem; padding-left: 1.1rem; list-style: disc; font-size: 0.8125rem; color: var(--muted); overflow-wrap: anywhere; display: grid; gap: 0.2rem; }
+  .foot { margin-top: 1.5rem; font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
+  @media print {
+    .doc { max-width: none; margin: 0; padding: 0; border: 0; }
+    .cover { break-after: page; }
+    .title { font-size: 26pt; }
+    .topic { margin-top: 16pt; padding-top: 12pt; border-top: 1px solid #ccc; }
+    .cover + .topic { margin-top: 0; padding-top: 0; border: 0; }
+    .flist li, .pbullet { break-inside: avoid; }
+    .refs { break-before: page; border: 0; }
+    .t-title { font-size: 16pt; }
+    .s-head { font-size: 10pt; }
+  }
+</style>

@@ -119,7 +119,7 @@ export function myData(uid: number) {
   const colItems = all<{ cid: number; type: string; id: string; addedAt: number }>(
     'SELECT i.collection_id cid, i.item_type type, i.item_id id, i.added_at addedAt FROM collection_items i JOIN collections c ON c.id = i.collection_id WHERE c.user_id = ? ORDER BY i.position, i.added_at');
   const exams = all<{ id: number; config: string; items: string }>(
-    'SELECT id, mode, title, config, items, time_limit timeLimit, started_at startedAt, finished_at finishedAt, score, total FROM exams WHERE user_id = ? ORDER BY started_at, id');
+    'SELECT id, mode, title, config, items, time_limit timeLimit, started_at startedAt, finished_at finishedAt, score, total, challenge FROM exams WHERE user_id = ? ORDER BY started_at, id');
   const answers = all<{ examId: number }>(
     'SELECT a.exam_id examId, a.item_id itemId, a.choice, a.correct, a.flagged, a.ms, a.answered_at answeredAt FROM exam_answers a JOIN exams e ON e.id = a.exam_id WHERE e.user_id = ? ORDER BY a.exam_id, a.answered_at');
   const chats = all<{ id: number }>('SELECT id, title, context, created_at createdAt, updated_at updatedAt FROM ai_chats WHERE user_id = ? ORDER BY created_at, id');

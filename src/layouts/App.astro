@@ -6,6 +6,8 @@ import Palette from '../components/islands/Palette';
 import Highlighter from '../components/islands/Highlighter';
 import StudyTimer from '../components/islands/StudyTimer';
 import NotificationBell from '../components/islands/NotificationBell';
+import { db, now } from '../server/db';
+import { dueMistakes } from '../server/mistakes';
 interface Props { title: string; crumbs?: { label: string; href?: string }[]; wide?: boolean }
 const { title, crumbs = [], wide = false } = Astro.props;
 const user = Astro.locals.user!;
@@ -28,6 +30,16 @@ const TABS = NAV.filter((n) => TAB_HREFS.includes(n.href));
 const MORE = NAV.filter((n) => !TAB_HREFS.includes(n.href));
 const active = (href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(href + '/'));
 const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0, 2).toUpperCase();
+// Cards due now plus mistakes due back: the Practice badge.
+const dueNow = (db.prepare('SELECT COUNT(*) n FROM srs_cards WHERE user_id = ? AND due <= ?').get(user.id, now()) as { n: number }).n + dueMistakes(user.id).length;
+const badge = (href: string) => (href === '/practice' && dueNow > 0 ? (dueNow > 99 ? '99+' : String(dueNow)) : null);
+const SHORTCUTS: [string, [string, string][]][] = [
+  ['Everywhere', [['/', 'Search'], ['Ctrl K', 'Search'], ['?', 'Show these shortcuts'], ['g h', 'Home'], ['g s', 'Study'], ['g f', 'Facts'], ['g p', 'Practice'], ['g a', 'Analytics'], ['g l', 'Library'], ['g c', 'Class'], ['g t', 'Tutor'], ['Esc', 'Close a dialog']]],
+  ['Flashcards', [['Space', 'Show the answer, then rate Good'], ['1 2 3 4', 'Again, Hard, Good, Easy']]],
+  ['MCQs', [['A to E', 'Pick an option (or 1 to 5)'], ['Enter', 'Check, then next'], ['← →', 'Previous or next question']]],
+  ['TOACS', [['R', 'Reveal the answer'], ['1 2 3', 'Grade yourself'], ['Z', 'Zoom the image']]],
+  ['Notes', [['Ctrl S', 'Save a note']]],
+];
 ---
 <Base title={title}>
   <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 btn btn-primary">Skip to content</a>
@@ -40,6 +52,7 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
           <a href={n.href} class:list={['navlink', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined} title={n.label}>
             {active(n.href) && <span class="nav-ind" transition:name="nav-ind" />}
             <Icon name={n.icon} size={19} /><span class="rail-text">{n.label}</span>
+            {badge(n.href) && <span class="nav-badge num" title={`${dueNow} due now`}><span class="sr-only">, </span>{badge(n.href)}<span class="sr-only"> due</span></span>}
           </a></>
         ))}
       </nav>
@@ -93,7 +106,7 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
       {TABS.map((n) => (
         <a href={n.href} class:list={['tab', { on: active(n.href) }]} aria-current={active(n.href) ? 'page' : undefined}>
           {active(n.href) && <span class="tab-ind" transition:name="tab-ind" />}
-          <Icon name={n.icon} size={20} /><span>{n.label}</span>
+          <span class="tab-ic"><Icon name={n.icon} size={20} />{badge(n.href) && <span class="tab-badge num" aria-label={`${dueNow} due`}>{badge(n.href)}</span>}</span><span>{n.label}</span>
         </a>
       ))}
       <button type="button" class:list={['tab', { on: MORE.some((n) => active(n.href)) }]} popovertarget="moresheet" aria-label="More pages">
@@ -110,6 +123,21 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
         {user.role === 'admin' && <a href="/admin" class:list={['sheet-item', { on: active('/admin') }]}><Icon name="UsersRound" size={20} /><span>Admin</span></a>}
       </div>
     </div>
+    <dialog id="kbdhelp" class="kbdhelp" aria-labelledby="kbdhelp-h">
+      <div class="kh-head">
+        <h2 id="kbdhelp-h" class="font-medium"><Icon name="Keyboard" size={18} />Keyboard shortcuts</h2>
+        <form method="dialog"><button class="btn btn-ghost btn-sm !px-2" aria-label="Close"><Icon name="X" size={16} /></button></form>
+      </div>
+      <div class="kh-body">
+        {SHORTCUTS.map(([group, rows]) => (
+          <section>
+            <h3>{group}</h3>
+            <dl>{rows.map(([k, label]) => <div><dt>{k.split(' ').map((p) => <span class="kbd">{p}</span>)}</dt><dd>{label}</dd></div>)}</dl>
+          </section>
+        ))}
+      </div>
+      <p class="kh-foot">Shortcuts pause while you type in a box. "g h" means press g, then h.</p>
+    </dialog>
   </div>
   <Palette client:idle transition:persist isAdmin={user.role === 'admin'} />
   <Highlighter client:idle transition:persist />
@@ -167,6 +195,30 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
   }
   bind();
   document.addEventListener('astro:after-swap', bind);
+  // "?" opens the cheat sheet; "g" then a letter jumps to a section. Never while typing or with a dialog open.
+  if (!(window as any).lbShortcutKeys) {
+    (window as any).lbShortcutKeys = true;
+    const GO: Record<string, string> = { h: '/', s: '/study', f: '/facts', p: '/practice', a: '/analytics', l: '/library', c: '/class', t: '/tutor' };
+    const help = () => { const d = document.getElementById('kbdhelp') as HTMLDialogElement | null; if (d && !d.open) d.showModal(); };
+    const typing = (t: EventTarget | null) => { const el = t as HTMLElement | null; return !!el && (/^(input|textarea|select)$/i.test(el.tagName) || el.isContentEditable); };
+    const overlay = () => { try { return !!document.querySelector('dialog[open], :popover-open'); } catch { return !!document.querySelector('dialog[open]'); } };
+    let gAt = 0;
+    window.addEventListener('lb:shortcuts', help);
+    window.addEventListener('keydown', (e) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || overlay()) return;
+      if (e.key === '?') { e.preventDefault(); help(); return; }
+      const k = e.key.toLowerCase();
+      if (gAt && Date.now() - gAt < 1200 && GO[k]) {
+        gAt = 0; e.preventDefault();
+        import('astro:transitions/client').then((m) => m.navigate(GO[k])).catch(() => { location.href = GO[k]; });
+        return;
+      }
+      gAt = k === 'g' && !e.shiftKey ? Date.now() : 0;
+    });
+    // Hide the phone tab bar while the on-screen keyboard is up, so it never covers the box being typed in.
+    document.addEventListener('focusin', (e) => { if (typing(e.target)) document.documentElement.dataset.typing = ''; });
+    document.addEventListener('focusout', () => { setTimeout(() => { if (!typing(document.activeElement)) delete document.documentElement.dataset.typing; }, 60); });
+  }
   // Browser errors go to the admin Health tab (rate limited server-side; at most 5 per page load here).
   if (!(window as any).lbErrBeacon) {
     (window as any).lbErrBeacon = true;
@@ -220,6 +272,19 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
   .content.wide { max-width: 96rem; }
   .mobile-brand { display: none; }
   .tabs { display: none; }
+  .nav-badge { position: relative; z-index: 1; margin-left: auto; min-width: 1.35rem; padding: 0 0.4rem; border-radius: 99px; font-size: 0.6875rem; font-weight: 600; line-height: 1.25rem; text-align: center; background: color-mix(in oklab, var(--accent) 22%, transparent); color: color-mix(in oklab, var(--accent) 70%, var(--ink)); transition: opacity var(--d2); }
+  [data-rail="collapsed"] .nav-badge { position: absolute; top: 0.15rem; left: 1.9rem; min-width: 0.55rem; height: 0.55rem; padding: 0; font-size: 0; background: var(--accent); }
+  .kbdhelp { width: min(40rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem); margin: auto; padding: 0; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--raised); color: var(--ink); box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.7); }
+  .kbdhelp[open] { animation: rise var(--d3) var(--ease); }
+  .kbdhelp::backdrop { background: rgb(0 0 0 / 0.5); backdrop-filter: blur(3px); }
+  .kh-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.1rem 0.4rem 1.25rem; }
+  .kh-head h2 { display: flex; align-items: center; gap: 0.55rem; }
+  .kh-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem 1.5rem; padding: 0.5rem 1.25rem 0.75rem; }
+  .kh-body h3 { margin-bottom: 0.4rem; font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+  .kh-body dl > div { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid var(--line); font-size: 0.8125rem; }
+  .kh-body dt { display: flex; gap: 0.25rem; flex: none; }
+  .kh-body dd { color: var(--muted); text-align: right; }
+  .kh-foot { padding: 0.75rem 1.25rem 1rem; border-top: 1px solid var(--line); font-size: 0.75rem; color: var(--faint); }
   html.theme-vt::view-transition-old(root) { animation: none; }
   html.theme-vt::view-transition-new(root) { animation: none; }
 
@@ -233,8 +298,13 @@ const initials = user.displayName.split(/\s+/).map((s) => s[0]).join('').slice(0
     .search-text { display: none; }
     .content { padding: 1.1rem 1rem calc(5.5rem + env(safe-area-inset-bottom)); }
     .tabs { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: color-mix(in oklab, var(--panel) 88%, transparent); backdrop-filter: blur(16px) saturate(1.3); }
-    .tab { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.4rem 0; font-size: 0.6875rem; color: var(--muted); border-radius: 12px; }
+    .tab { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; min-height: 3rem; padding: 0.4rem 0; font-size: 0.6875rem; color: var(--muted); border-radius: 12px; -webkit-tap-highlight-color: transparent; }
     .tab > * { position: relative; z-index: 1; }
+    .tab-ic { display: grid; place-items: center; }
+    .tab-badge { position: absolute; top: -0.35rem; left: calc(100% - 0.45rem); min-width: 1.05rem; padding: 0 0.28rem; border-radius: 99px; font-size: 0.5625rem; font-weight: 700; line-height: 1rem; text-align: center; background: var(--accent); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); }
+    [data-typing] .tabs { transform: translateY(110%); pointer-events: none; }
+    .tabs { transition: transform var(--d2) var(--ease); }
+    [data-typing] .content { padding-bottom: 1.5rem; }
     .tab.on { color: color-mix(in oklab, var(--accent) 72%, var(--ink)); }
     .tab-ind { position: absolute !important; inset: 0.1rem 0.5rem; z-index: 0 !important; border-radius: 12px; background: var(--glow); }
   }

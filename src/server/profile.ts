@@ -5,7 +5,7 @@ import { SYSTEMS, systemOrder } from '../lib/data';
 // First-login setup and study preferences. Goals (exam date, daily targets) stay in `goals`; this adds the
 // daily study budget, a 1-5 self-rating per system (seeds the planner before there is any history) and FSRS retention.
 export interface Profile { minutes: number; confidence: Record<string, number>; retention: number; onboarded: boolean; prefs: Prefs }
-export interface Prefs { remindAt?: number; freezes?: number; freezeUsed?: string[] }
+export interface Prefs { remindAt?: number; freezes?: number; freezeUsed?: string[]; freezeEarned?: number }
 export const MINUTES = { min: 10, max: 240 };
 export const RETENTION = { min: 0.8, max: 0.97, default: 0.9 };
 

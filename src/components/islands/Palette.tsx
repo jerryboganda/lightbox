@@ -1,18 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from 'cmdk';
-import MiniSearch from 'minisearch';
+import MiniSearch, { type Query } from 'minisearch';
 import { AnimatePresence, motion } from 'motion/react';
 import { navigate } from 'astro:transitions/client';
-import { Bell, Bot, MessagesSquare, Sparkles, BookOpenText, Bookmark, ChartNoAxesCombined, CircleHelp, Columns3, FileText, Image, LayoutDashboard, Layers, ListChecks, Maximize2, MoonStar, ScanEye, Search, ShieldAlert, Target, Timer, Images, UsersRound, CornerDownLeft } from 'lucide-react';
+import { Bell, Bot, MessagesSquare, Sparkles, BookOpenText, Bookmark, ChartNoAxesCombined, CircleHelp, Columns3, FileText, Image, LayoutDashboard, Layers, ListChecks, Maximize2, MoonStar, ScanEye, Search, ShieldAlert, Target, Timer, Images, UsersRound, CornerDownLeft, Clock, Keyboard, Wand, X } from 'lucide-react';
+import { expansions } from '../../lib/synonyms';
 
-type Doc = { id: string; type: 'topic' | 'fact' | 'mcq' | 'image'; title: string; text: string; href: string; label?: string };
+type Doc = { id: string; type: 'topic' | 'fact' | 'mcq' | 'image'; title: string; text: string; href: string; label?: string; body?: string; tp?: string[]; sys?: string[] };
 const TYPE = { topic: { icon: BookOpenText, name: 'Topics' }, fact: { icon: FileText, name: 'Facts' }, mcq: { icon: CircleHelp, name: 'MCQs' }, image: { icon: Image, name: 'Atlas' } };
 const LABEL_COLOR: Record<string, string> = { cited: 's-cited', agreed: 's-agreed', unchecked: 's-unchecked', disputed: 's-disputed' };
+const RECENT_KEY = 'lb:recent-searches';
+const readRecent = (): string[] => { try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 6) : []; } catch { return []; } };
+type Scope = 'all' | 'topic' | 'system';
+type Here = { system: string; slug: string; title: string; sysLabel: string } | null;
+/** The topic page the palette was opened on, for the "In this topic" filter. */
+const whereAmI = (): Here => {
+  const m = location.pathname.match(/^\/study\/([a-z0-9-]+)\/([a-z0-9-]+)\/?$/i);
+  if (!m || m[2] === 'print') return null;
+  const sysLink = document.querySelector<HTMLAnchorElement>(`nav[aria-label="Breadcrumb"] a[href="/study/${m[1]}"]`);
+  return { system: m[1], slug: m[2], title: document.querySelector('main h1, h1')?.textContent?.trim() || 'this topic', sysLabel: sysLink?.textContent?.trim() || 'this system' };
+};
 
 export default function Palette({ isAdmin }: { isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [docs, setDocs] = useState<Doc[] | null>(null);
+  const [recent, setRecent] = useState<string[]>([]);
+  const [here, setHere] = useState<Here>(null);
+  const [scope, setScope] = useState<Scope>('all');
   const loading = useRef(false);
 
   useEffect(() => {
@@ -32,7 +47,12 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     if (!open) { setQ(''); return; }
     (window as any).lbPaletteWanted = false;
-    if (!docs && !loading.current) {
+    setRecent(readRecent());
+    setHere(whereAmI());
+    setScope('all');
+  }, [open]);
+  useEffect(() => {
+    if (open && !docs && !loading.current) {
       loading.current = true;
       fetch('/api/search-index').then((r) => r.json()).then(setDocs).finally(() => (loading.current = false));
     }
@@ -40,17 +60,39 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
 
   const ms = useMemo(() => {
     if (!docs) return null;
-    const m = new MiniSearch<Doc>({ fields: ['title', 'text', 'id'], storeFields: ['type', 'title', 'text', 'href', 'label'], searchOptions: { boost: { title: 3, id: 4 }, prefix: true, fuzzy: 0.18 } });
+    const m = new MiniSearch<Doc>({ fields: ['title', 'text', 'id', 'body'], storeFields: ['type', 'title', 'text', 'href', 'label', 'tp', 'sys'], searchOptions: { boost: { title: 3, id: 4 }, prefix: true, fuzzy: 0.18 } });
     m.addAll(docs);
     return m;
   }, [docs]);
 
+  // Abbreviations and spellings widen the search ("RML" also finds "right middle lobe"); each expansion must match as a whole phrase.
+  const query = useMemo<Query>(() => {
+    const ex = expansions(q.trim());
+    return ex.length ? { combineWith: 'OR', queries: [q.trim(), ...ex.map((e) => ({ combineWith: 'AND' as const, prefix: false, fuzzy: false, queries: [e] }))] } : q.trim();
+  }, [q]);
+  const inScope = (r: { tp?: string[]; sys?: string[] }) => !here || scope === 'all' || (scope === 'topic' ? !!r.tp?.includes(here.slug) : !!r.sys?.includes(here.system));
   const results = useMemo(() => {
     if (!ms || q.trim().length < 2) return [];
-    return ms.search(q).slice(0, 40) as unknown as (Doc & { score: number })[];
-  }, [ms, q]);
+    return ms.search(query, { filter: (r) => inScope(r as { tp?: string[]; sys?: string[] }) }).slice(0, 40) as unknown as (Doc & { score: number })[];
+  }, [ms, query, scope, here]);
+  const expanded = useMemo(() => (q.trim().length >= 2 ? expansions(q.trim()).slice(0, 3) : []), [q]);
+  // "Did you mean": the closest indexed words when nothing matched.
+  const suggestion = useMemo(() => {
+    if (!ms || results.length || q.trim().length < 3) return null;
+    const s = ms.autoSuggest(q.trim(), { fuzzy: 0.34, prefix: true, combineWith: 'AND' })[0]?.suggestion;
+    return s && s.toLowerCase() !== q.trim().toLowerCase() ? s : null;
+  }, [ms, results, q]);
+
+  const remember = (term: string) => {
+    const t = term.trim();
+    if (t.length < 2) return;
+    const next = [t, ...readRecent().filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, 6);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* storage full or blocked */ }
+  };
+  const clearRecent = () => { try { localStorage.removeItem(RECENT_KEY); } catch { /* ignore */ } setRecent([]); };
 
   const go = (href: string) => { setOpen(false); navigate(href); };
+  const openResult = (href: string) => { remember(q); go(href); };
   const actions = [
     { label: 'Home dashboard', icon: LayoutDashboard, run: () => go('/') },
     { label: 'Review flashcards due today', icon: Layers, run: () => go('/practice/cards') },
@@ -72,6 +114,8 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
     { label: 'Start a focus timer', icon: Timer, run: () => { setOpen(false); window.dispatchEvent(new CustomEvent('lb:timer', { detail: 'start' })); } },
     { label: 'Toggle focus mode', icon: Maximize2, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-focus-toggle]')?.click(); } },
     { label: 'Change theme', icon: MoonStar, run: () => { setOpen(false); document.querySelector<HTMLElement>('[data-theme-toggle]')?.click(); } },
+    { label: 'Print my high-yield sheet', icon: FileText, run: () => go('/library/high-yield') },
+    { label: 'Keyboard shortcuts', icon: Keyboard, run: () => { setOpen(false); window.dispatchEvent(new Event('lb:shortcuts')); } },
     ...(isAdmin ? [{ label: 'Manage users', icon: UsersRound, run: () => go('/admin') }] : []),
   ];
   const groups = (['topic', 'fact', 'mcq', 'image'] as const).map((t) => ({ t, items: results.filter((r) => r.type === t).slice(0, t === 'fact' ? 12 : 6) })).filter((g) => g.items.length);
@@ -88,9 +132,43 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
                 <Command.Input autoFocus value={q} onValueChange={setQ} placeholder="Search 463 facts, 183 topics, MCQs and images…" className="h-14 w-full bg-transparent text-[15px] outline-none placeholder:text-faint" />
                 <span className="kbd">Esc</span>
               </div>
+              {(here || expanded.length > 0) && (
+                <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2 text-xs">
+                  {here && (
+                    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Search in">
+                      {([['all', 'Everywhere'], ['topic', `In ${here.title}`], ['system', `In ${here.sysLabel}`]] as const).map(([k, l]) => (
+                        <button key={k} type="button" className="chip max-w-[14rem] !h-7 truncate" aria-pressed={scope === k} onClick={() => setScope(k)}>{l}</button>
+                      ))}
+                    </div>
+                  )}
+                  {expanded.length > 0 && <span className="ml-auto truncate text-faint" title={expanded.join(', ')}>Also searching: {expanded.join(', ')}</span>}
+                </div>
+              )}
               <Command.List className="max-h-[60vh] overflow-y-auto p-2">
-                {q.trim().length >= 2 && docs && !results.length && <Command.Empty className="px-3 py-10 text-center text-muted text-sm">No matches for "{q}". Try a fact ID like F-AUG-145, or a shorter word.</Command.Empty>}
+                {q.trim().length >= 2 && docs && !results.length && (
+                  <>
+                    {suggestion && (
+                      <Command.Group heading="Did you mean" className="pal-group">
+                        <Command.Item value={`suggest:${suggestion}`} onSelect={() => setQ(suggestion)} className="pal-item"><Wand size={17} className="text-accent" />Search for “{suggestion}”</Command.Item>
+                      </Command.Group>
+                    )}
+                    {scope !== 'all' && (
+                      <Command.Group heading="Wider" className="pal-group">
+                        <Command.Item value="scope:all" onSelect={() => setScope('all')} className="pal-item"><Search size={17} className="text-muted" />Search everywhere instead</Command.Item>
+                      </Command.Group>
+                    )}
+                    {!suggestion && scope === 'all' && <div className="px-3 py-10 text-center text-muted text-sm">No matches for "{q}". Try a fact ID like F-AUG-145, an abbreviation like RML, or a shorter word.</div>}
+                  </>
+                )}
                 {q.trim().length >= 2 && !docs && <div className="space-y-2 p-2">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-10" />)}</div>}
+                {q.trim().length < 2 && recent.length > 0 && (
+                  <Command.Group heading="Recent searches" className="pal-group">
+                    {recent.map((r) => (
+                      <Command.Item key={r} value={`recent:${r}`} onSelect={() => setQ(r)} className="pal-item"><Clock size={17} className="text-muted" />{r}</Command.Item>
+                    ))}
+                    <Command.Item value="recent:clear" onSelect={clearRecent} className="pal-item text-faint"><X size={17} />Clear recent searches</Command.Item>
+                  </Command.Group>
+                )}
                 {q.trim().length < 2 && (
                   <Command.Group heading="Go to" className="pal-group">
                     {actions.map((a) => (
@@ -103,7 +181,7 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
                     {g.items.map((r) => {
                       const I = TYPE[r.type].icon;
                       return (
-                        <Command.Item key={r.id} value={r.id} onSelect={() => go(r.href)} className="pal-item">
+                        <Command.Item key={r.id} value={r.id} onSelect={() => openResult(r.href)} className="pal-item">
                           <I size={17} className="text-muted shrink-0" />
                           <span className="min-w-0 flex-1"><span className="block truncate">{r.title}</span>{r.text && r.type !== 'topic' && <span className="block truncate text-xs text-faint">{r.text}</span>}</span>
                           {r.label && <span className={`badge ${LABEL_COLOR[r.label] ?? 's-neutral'}`}>{r.label}</span>}
@@ -115,7 +193,7 @@ export default function Palette({ isAdmin }: { isAdmin: boolean }) {
                 ))}
               </Command.List>
               <div className="flex items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-faint">
-                <span><span className="kbd">↑</span> <span className="kbd">↓</span> to move</span><span><span className="kbd">Enter</span> to open</span><span className="ml-auto">Type / anywhere to search</span>
+                <span><span className="kbd">↑</span> <span className="kbd">↓</span> to move</span><span><span className="kbd">Enter</span> to open</span><span className="ml-auto">Type / anywhere to search · <span className="kbd">?</span> for shortcuts</span>
               </div>
             </Command>
           </motion.div>

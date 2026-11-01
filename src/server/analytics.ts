@@ -1,6 +1,7 @@
 import { default_w, forgetting_curve, State } from 'ts-fsrs';
 import { db, now } from './db';
 import { cardByFact, cards, facts, mcqs, SYSTEMS, systemOrder, topicBySlug, topics } from '../lib/data';
+import { frozenDays } from './streaks';
 
 export const DAY = 86_400_000;
 const TZ_MS = 5 * 3_600_000; // Pakistan time, as in progress.ts
@@ -127,10 +128,13 @@ export function analytics(userId: number) {
     const first = w.find((d) => d.day.endsWith('-01')) ?? (c === 0 ? w[0] : null);
     return first ? [{ col: c, label: new Date(first.day + 'T00:00:00Z').toLocaleString('en', { month: 'short', timeZone: 'UTC' }) }] : [];
   }).filter((m, i, a) => !(i === 0 && a[1] && a[1].col - m.col < 3)); // drop a cramped leading partial month
+  // Days bridged by a streak freeze keep a run alive without adding to it.
+  const frozen = frozenDays(userId);
+  const alive = (d: number) => score(d) > 0 || frozen.has(dayKey(d));
   let current = 0;
-  for (let d = score(t0) ? t0 : t0 - DAY; d >= since && score(d) > 0; d -= DAY) current++;
+  for (let d = alive(t0) ? t0 : t0 - DAY; d >= since && alive(d); d -= DAY) if (score(d)) current++;
   let longest = 0, run = 0;
-  for (let d = since; d <= t0; d += DAY) { run = score(d) ? run + 1 : 0; longest = Math.max(longest, run); }
+  for (let d = since; d <= t0; d += DAY) { run = score(d) ? run + 1 : frozen.has(dayKey(d)) ? run : 0; longest = Math.max(longest, run); }
   const activeIn = (n: number) => Array.from({ length: n }, (_, i) => score(t0 - i * DAY)).filter(Boolean).length;
   const active14 = activeIn(14), active28 = activeIn(28);
   const hmActive = weeks.flat().filter((d) => d.score > 0).length;

@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Check, CircleAlert, ExternalLink, Info, RotateCc
 import { host, PAPERS, urls, verdictBadge } from '../../lib/quiz';
 import AiMistake from './AiMistake';
 import Thread from './Thread';
+import Poll from './Poll';
 
 type Mcq = { qid: string; paper: string; stem: string; options: Record<string, string>; key: string; keyEvidence: string; myAnswer: string; confidence: string; reason: string; verdict: string; evidence: string; note: string; notBlind: boolean; notBlindReason: string; file: string; unit: number };
 type Attempt = { qid: string; choice: string; correct: number | null };
@@ -189,6 +190,9 @@ export default function McqPlayer() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {checked && (m.verdict === 'DISPUTED' || !m.key) && Object.keys(m.options).length >= 2 && (
+              <div className="mt-3"><p className="mb-1.5 text-xs text-muted">The key here is {m.key ? 'disputed' : 'missing'}. Tell the class which answer you'd pick:</p><Poll key={m.qid} mcqQid={m.qid} compact /></div>
+            )}
             {checked && <div className="mt-3"><Thread itemType="mcq" itemId={m.qid} compact /></div>}
 
             <div className="mt-6 flex items-center gap-2">

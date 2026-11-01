@@ -155,6 +155,7 @@ export async function userAction(me: SessionUser, id: number, action: unknown): 
 }
 
 // ---- announcements ----
+export const announcementCount = () => (db.prepare('SELECT COUNT(*) n FROM announcements').get() as { n: number }).n;
 export const listAnnouncements = () => ({
   active: db.prepare('SELECT a.id, a.body, a.created_at createdAt, u.username FROM announcements a LEFT JOIN users u ON u.id = a.created_by WHERE a.active = 1 ORDER BY a.created_at DESC').all() as Row[],
   past: db.prepare('SELECT a.id, a.body, a.created_at createdAt, u.username FROM announcements a LEFT JOIN users u ON u.id = a.created_by WHERE a.active = 0 ORDER BY a.created_at DESC LIMIT 6').all() as Row[],

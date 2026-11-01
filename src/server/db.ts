@@ -365,6 +365,14 @@ const MIGRATIONS = [
      PRIMARY KEY (user_id, kind, ref)
    );
    CREATE INDEX ai_feedback_kind ON ai_feedback(kind, created_at);`,
+  // v7: the weekly class challenge. One fixed set of MCQs per week (same for everyone); each attempt is an exam tagged with the week.
+  `CREATE TABLE challenges (
+     week TEXT PRIMARY KEY,
+     items TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   );
+   ALTER TABLE exams ADD COLUMN challenge TEXT;
+   CREATE INDEX exams_challenge ON exams(challenge, finished_at);`,
 ];
 
 function open() {

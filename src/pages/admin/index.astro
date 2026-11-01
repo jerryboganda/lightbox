@@ -15,7 +15,7 @@ import AdminPolls from '../../components/islands/admin/Polls';
 import AdminAiQueue from '../../components/islands/admin/AiQueue';
 import AdminAiBulk from '../../components/islands/admin/AiBulk';
 import { now } from '../../server/db';
-import { AI_STATUS, aiCounts, bulkTopics, COMMENT_FILTERS, commentCounts, isAdmin, listAiMcqs, listComments, listPolls, listReports, listUsers, navCounts, REPORT_KINDS, REPORT_STATUS, REPORT_TYPES, reportCounts } from '../../server/admin';
+import { AI_STATUS, aiCounts, announcementCount, bulkTopics, COMMENT_FILTERS, commentCounts, isAdmin, listAiMcqs, listComments, listPolls, listReports, listUsers, navCounts, REPORT_KINDS, REPORT_STATUS, REPORT_TYPES, reportCounts } from '../../server/admin';
 import '../../styles/admin.css';
 
 const me = Astro.locals.user;
@@ -93,7 +93,7 @@ const ac = tab === 'ai' ? aiCounts() : null;
   <div class="mt-5" data-no-highlight>
     {tab === 'overview' && <Overview />}
 
-    {tab === 'users' && <div class="reveal" style="--i:2"><AdminUsers client:idle users={listUsers()} meId={me.id} now={t} filter={p.get('filter') ?? undefined} /></div>}
+    {tab === 'users' && <div class="reveal" style="--i:2"><AdminUsers client:idle users={listUsers()} meId={me.id} now={t} filter={p.get('filter') ?? undefined} announced={announcementCount()} /></div>}
 
     {tab === 'moderation' && (
       <section aria-label="Moderation">

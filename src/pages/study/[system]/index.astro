@@ -27,8 +27,12 @@ const deck = scopeInfo(Astro.locals.user!.id, `system:${system}`);
     <div class="flex shrink-0 flex-wrap gap-2 max-sm:pl-16">
       {deck && <ExportMenu client:idle scopes={[deck]} trigger="Anki deck" />}
       <a href={`/study/${system}/print`} class="btn btn-sm"><Icon name="Printer" size={15} />Print all</a>
+      <button type="button" class="btn btn-sm" hidden data-pack={system} data-label={meta.label} data-pages={JSON.stringify(list.map(({ t }) => `/study/${system}/${t.slug}`))} title="Save every topic here so it opens with no internet">
+        <Icon name="CloudDownload" size={15} /><span data-pack-text>Save offline</span>
+      </button>
     </div>
   </header>
+  <p class="sr-only" role="status" aria-live="polite" data-pack-status></p>
   <ul class="mt-6 grid gap-3 md:grid-cols-2">
     {list.map(({ t, n, labels, open }, i) => (
       <li class="reveal" style={`--i:${Math.min(i + 1, 14)}`}>
@@ -47,3 +51,31 @@ const deck = scopeInfo(Astro.locals.user!.id, `system:${system}`);
     ))}
   </ul>
 </App>
+
+<script>
+  import { hasPack, savePack, size, supported } from '../../../scripts/offline';
+  async function init() {
+    const b = document.querySelector<HTMLButtonElement>('[data-pack]');
+    if (!b || !supported()) return;
+    const text = b.querySelector('[data-pack-text]')!, status = document.querySelector('[data-pack-status]');
+    const sys = b.dataset.pack!, label = b.dataset.label!, pages = JSON.parse(b.dataset.pages || '[]') as string[];
+    const idle = async () => { text.textContent = (await hasPack(sys)) ? 'Saved offline · update' : 'Save offline'; };
+    b.hidden = false;
+    await idle();
+    b.onclick = async () => {
+      if (!navigator.onLine) { text.textContent = 'Connect to save'; setTimeout(idle, 2500); return; }
+      b.disabled = true;
+      try {
+        const pack = await savePack(sys, label, pages, (d, t) => { text.textContent = `Saving ${Math.min(99, Math.round((d / t) * 100))}%`; });
+        text.textContent = 'Saved offline';
+        if (status) status.textContent = `${label} saved for offline use, ${size(pack.bytes)}. Manage packs in Account.`;
+        setTimeout(idle, 2500);
+      } catch {
+        text.textContent = 'Could not save, try again';
+        setTimeout(idle, 3000);
+      } finally { b.disabled = false; }
+    };
+  }
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>

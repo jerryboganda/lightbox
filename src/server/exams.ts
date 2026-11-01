@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { db, now } from './db';
 import { recordAttempt } from './progress';
-import { mcqTopics } from './analytics';
+import { DAY, dayKey, dayStart, mcqTopics } from './analytics';
 import { facts, images, mcqs, shortFile, SYSTEMS, topicBySlug, type Fact, type Mcq } from '../lib/data';
 import { HISTORIES, matcher, PAPERS, STATUSES, type Filters, type Mine, type PoolItem } from '../lib/quiz';
 
@@ -325,3 +325,76 @@ export function recent(userId: number, limit = 5) {
 }
 
 export const examHref = (r: { id: number; mode: Mode }) => (r.mode === 'toacs' ? `/practice/toacs/${r.id}` : `/practice/exam/${r.id}`);
+
+// ---- weekly class challenge ----------------------------------------------
+// The same timed set for everyone, Monday to Sunday (Pakistan time). Keyed, undisputed questions only, spread
+// across systems and kept clear of the last four weeks. One attempt each; the first finished attempt is the score.
+export const CHALLENGE = { count: 15, perQuestion: 60 } as const;
+const TZ_MS = 5 * 3_600_000;
+const mondayOf = (t: number) => { const d = dayStart(t); return d - ((new Date(d + TZ_MS).getUTCDay() + 6) % 7) * DAY; };
+export const weekKey = (t = now()) => dayKey(mondayOf(t));
+export const weekEnds = (week: string) => Date.parse(week + 'T00:00:00+05:00') + 7 * DAY;
+
+/** Deterministic pick for a week: a seeded shuffle, round-robin over systems. */
+export function pickChallenge(week: string, avoid: Set<string>, count: number = CHALLENGE.count) {
+  let seed = [...week].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0;
+  const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+  const ok = pool.filter((p) => p.keyed && !p.disputed);
+  const fresh = ok.filter((p) => !avoid.has(p.qid));
+  const src = fresh.length >= count ? fresh : ok;
+  const bySys = new Map<string, PoolItem[]>();
+  for (const p of [...src].sort((a, b) => a.qid.localeCompare(b.qid))) (bySys.get(p.system) ?? bySys.set(p.system, []).get(p.system)!).push(p);
+  const lists = [...bySys.values()].map((l) => { for (let i = l.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [l[i], l[j]] = [l[j], l[i]]; } return l; });
+  for (let i = lists.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [lists[i], lists[j]] = [lists[j], lists[i]]; }
+  const out: string[] = [];
+  for (let r = 0; out.length < count && lists.some((l) => l.length > r); r++) for (const l of lists) if (l[r] && out.length < count) out.push(l[r].qid);
+  return out;
+}
+
+export function challengeItems(week = weekKey()): string[] {
+  const row = db.prepare('SELECT items FROM challenges WHERE week = ?').get(week) as { items: string } | undefined;
+  if (row) return (JSON.parse(row.items) as string[]).filter((q) => mcqByQid.has(q));
+  const avoid = new Set((db.prepare('SELECT items FROM challenges WHERE week < ? ORDER BY week DESC LIMIT 4').all(week) as { items: string }[]).flatMap((r) => JSON.parse(r.items) as string[]));
+  const items = pickChallenge(week, avoid);
+  db.prepare('INSERT OR IGNORE INTO challenges (week, items, created_at) VALUES (?, ?, ?)').run(week, JSON.stringify(items), now());
+  return (JSON.parse((db.prepare('SELECT items FROM challenges WHERE week = ?').get(week) as { items: string }).items) as string[]).filter((q) => mcqByQid.has(q));
+}
+
+const myChallenge = (userId: number, week: string) =>
+  db.prepare('SELECT * FROM exams WHERE user_id = ? AND challenge = ? ORDER BY id LIMIT 1').get(userId, week) as ExamRow | undefined;
+
+/** Starts (or resumes) this week's challenge; returns the exam id. */
+export function startChallenge(userId: number): number | string {
+  const week = weekKey(), had = myChallenge(userId, week);
+  if (had) return had.id;
+  const qs = challengeItems(week);
+  if (!qs.length) return 'No questions are available for a challenge yet.';
+  return db.transaction(() => {
+    const again = myChallenge(userId, week);
+    if (again) return again.id;
+    const id = insert(userId, 'exam', `Weekly challenge · week of ${week}`, { challenge: week, shuffle: false, shuffleOptions: false, perQuestion: CHALLENGE.perQuestion }, qs.map((q) => ({ q })), qs.length * CHALLENGE.perQuestion);
+    db.prepare('UPDATE exams SET challenge = ? WHERE id = ?').run(week, id);
+    return id;
+  })();
+}
+
+export interface ChallengeEntry { rank: number; userId: number; name: string; score: number; total: number; ms: number }
+/** Finished attempts for a week, best score then fastest. Settles attempts whose time ran out. */
+export function challengeBoard(week = weekKey()): ChallengeEntry[] {
+  for (const e of db.prepare('SELECT * FROM exams WHERE challenge = ? AND finished_at IS NULL AND time_limit IS NOT NULL AND started_at + time_limit * 1000 + ? < ?').all(week, GRACE, now()) as ExamRow[]) finishRow(e);
+  const rows = db.prepare(`SELECT e.user_id userId, u.display_name name, e.score, e.total, e.finished_at - e.started_at ms FROM exams e JOIN users u ON u.id = e.user_id
+    WHERE e.challenge = ? AND e.finished_at IS NOT NULL AND u.disabled = 0 AND e.id = (SELECT MIN(id) FROM exams x WHERE x.user_id = e.user_id AND x.challenge = e.challenge)
+    ORDER BY e.score DESC, ms ASC, u.display_name`).all(week) as Omit<ChallengeEntry, 'rank'>[];
+  const ranked = rows.map((r) => ({ ...r, rank: 0 }));
+  ranked.forEach((r, i) => (r.rank = i && ranked[i - 1].score === r.score && ranked[i - 1].ms === r.ms ? ranked[i - 1].rank : i + 1));
+  return ranked;
+}
+
+export function challengeStatus(userId: number) {
+  const week = weekKey(), board = challengeBoard(week), e = myChallenge(userId, week);
+  const n = challengeItems(week).length;
+  const mine = e ? { id: e.id, href: examHref(e), finished: !!e.finished_at, score: e.score, total: e.total, rank: board.find((b) => b.userId === userId)?.rank ?? null } : null;
+  const done = board.filter((b) => b.total > 0);
+  const avg = done.length ? Math.round((done.reduce((s, b) => s + b.score / b.total, 0) / done.length) * 100) : null;
+  return { week, n, minutes: Math.round((n * CHALLENGE.perQuestion) / 60), endsAt: weekEnds(week), mine, players: board.length, avg, top: board.slice(0, 5) };
+}

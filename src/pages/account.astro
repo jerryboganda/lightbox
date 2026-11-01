@@ -104,7 +104,19 @@ const hhmm = `${String(Math.floor(remindAt / 60)).padStart(2, '0')}:${String(rem
           </div>
         </section>
 
-        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:5" aria-labelledby="mydata-h">
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:5" aria-labelledby="packs-h" data-packs hidden>
+          <div class="flex gap-4">
+            <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="HardDriveDownload" size={20} /></span>
+            <div class="min-w-0 flex-1">
+              <h2 id="packs-h" class="font-medium">Offline packs</h2>
+              <p class="mt-1 max-w-lg text-sm text-muted">Systems saved on this device open with no internet. Save one from its Study page. Signing out removes them.</p>
+              <ul class="mt-4 divide-y divide-line" data-packs-list></ul>
+              <p class="mt-3 text-sm text-faint" data-packs-empty hidden>Nothing saved yet. Open a system in <a href="/study" class="text-accent hover:underline">Study</a> and choose Save offline.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="reveal panel mt-5 p-5 sm:p-6" style="--i:6" aria-labelledby="mydata-h">
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex gap-4">
               <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="DatabaseBackup" size={20} /></span>
@@ -123,6 +135,7 @@ const hhmm = `${String(Math.floor(remindAt / 60)).padStart(2, '0')}:${String(rem
 </App>
 
 <script>
+  import { listPacks, removePack, size, supported } from '../scripts/offline';
   function init() {
     const get = (k: string, d: string) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
     const set = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} (window as any).lbApplyPrefs?.(); };
@@ -140,6 +153,33 @@ const hhmm = `${String(Math.floor(remindAt / 60)).padStart(2, '0')}:${String(rem
     }
     retention();
     reminders();
+    packs();
+  }
+
+  async function packs() {
+    const box = document.querySelector<HTMLElement>('[data-packs]');
+    if (!box || !supported()) return;
+    const ul = box.querySelector<HTMLElement>('[data-packs-list]')!, empty = box.querySelector<HTMLElement>('[data-packs-empty]')!;
+    const list = await listPacks().catch(() => []);
+    box.hidden = false;
+    empty.hidden = list.length > 0;
+    ul.replaceChildren(...list.map((p) => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0';
+      const a = document.createElement('a');
+      a.href = `/study/${p.system}`; a.className = 'min-w-0 text-sm hover:text-accent';
+      a.textContent = p.label;
+      const meta = document.createElement('span');
+      meta.className = 'num ml-2 text-xs text-faint';
+      meta.textContent = `${p.pages.length - 2} topics · ${size(p.bytes)} · ${new Date(p.at).toLocaleDateString()}`;
+      a.append(meta);
+      const rm = document.createElement('button');
+      rm.type = 'button'; rm.className = 'btn btn-sm btn-ghost shrink-0'; rm.textContent = 'Remove';
+      rm.setAttribute('aria-label', `Remove the ${p.label} offline pack`);
+      rm.addEventListener('click', async () => { rm.disabled = true; await removePack(p.system).catch(() => {}); packs(); });
+      li.append(a, rm);
+      return li;
+    }));
   }
 
   const post = (url: string, body: unknown, method = 'POST') =>

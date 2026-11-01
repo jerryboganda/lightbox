@@ -88,7 +88,10 @@ const days = (tab === 'history' ? history(uid) : []).map((d) => {
       <h1 class="text-2xl font-medium">Library</h1>
       <p class="mt-1 text-muted">Everything you saved, marked and wrote, in one place. Only you can see it, unless you share a collection.</p>
     </div>
-    <ExportMenu client:idle scopes={exportScopes(uid)} trigger="Export to Anki" />
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="/library/high-yield" class="btn"><Icon name="FileText" size={16} />My high-yield sheet</a>
+      <ExportMenu client:idle scopes={exportScopes(uid)} trigger="Export to Anki" />
+    </div>
   </header>
 
   <nav class="ltabs reveal" style="--i:1" aria-label="Library sections">

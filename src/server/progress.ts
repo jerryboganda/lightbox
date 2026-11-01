@@ -5,6 +5,7 @@ import { daysUntil, factTopics, getGoals, topicFacts } from './analytics';
 import { trackMistake } from './mistakes';
 import { DEFAULT_NEW, pacing } from './pacing';
 import { retentionFor } from './profile';
+import { liveStreak } from './streaks';
 
 export const NEW_PER_DAY = DEFAULT_NEW; // without an exam date; pacing.ts sets it from the exam date otherwise
 /** A card forgotten this many times is a leech: it gets marked weak and flagged in the session. */
@@ -184,8 +185,8 @@ export function dashboard(userId: number) {
     ...(db.prepare('SELECT reviewed_at t FROM srs_log WHERE user_id = ? AND reviewed_at > ?').all(userId, now() - 400 * 86_400_000) as any[]).map((r) => dayKey(r.t)),
     ...(db.prepare('SELECT created_at t FROM mcq_attempts WHERE user_id = ? AND created_at > ?').all(userId, now() - 400 * 86_400_000) as any[]).map((r) => dayKey(r.t)),
   ]);
-  let streak = 0;
-  for (let d = days.has(dayKey(now())) ? now() : now() - 86_400_000; days.has(dayKey(d)); d -= 86_400_000) streak++;
+  const s = liveStreak(userId, days);
+  const streak = s.streak;
   const week = Array.from({ length: 14 }, (_, i) => {
     const s = t0 - (13 - i) * 86_400_000;
     const n = (db.prepare('SELECT (SELECT COUNT(*) FROM srs_log WHERE user_id = ? AND reviewed_at >= ? AND reviewed_at < ?) + (SELECT COUNT(*) FROM mcq_attempts WHERE user_id = ? AND created_at >= ? AND created_at < ?) n').get(userId, s, s + 86_400_000, userId, s, s + 86_400_000) as any).n;
@@ -202,7 +203,7 @@ export function dashboard(userId: number) {
   }
   const recent = db.prepare('SELECT kind, ref, title, at, pos FROM visits WHERE user_id = ? ORDER BY at DESC LIMIT 4').all(userId) as { kind: string; ref: string; title: string; at: number; pos: number | null }[];
   return {
-    dueNow, newToday: q.fresh.length, reviewsToday, streak, week, mastery, recent,
+    dueNow, newToday: q.fresh.length, reviewsToday, streak, freezes: s.freezes, frozenRecently: s.used.length > 0 && s.used[0] >= dayKey(now() - 7 * 86_400_000), streakHeld: s.held, week, mastery, recent,
     mcqAnswered: mcq.answered ?? 0, mcqRight: mcq.n_right ?? 0, mcqKeyed: mcq.keyed ?? 0,
     cardsSeen: seen.length,
   };

@@ -1,6 +1,6 @@
 // Shared bits for the admin islands: JSON fetch, times, confirm and credentials dialogs.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Check, Copy, KeyRound, TriangleAlert } from 'lucide-react';
+import { Check, Copy, KeyRound, MessageCircle, Printer, TriangleAlert } from 'lucide-react';
 import { toast } from '../../../scripts/toast';
 
 export async function api<T = any>(url: string, method = 'POST', body?: unknown): Promise<T> {
@@ -75,6 +75,36 @@ export function useConfirm() {
 
 export type Cred = { username: string; name: string; password: string };
 const loginText = (c: Cred) => `Lightbox login\n${location.origin}\nUsername: ${c.username}\nTemporary password: ${c.password}`;
+/** The first-sign-in steps on every slip and message. */
+export const FIRST_STEPS = [
+  'Open the link and sign in with the username and temporary password.',
+  'Choose your own password when asked. Nobody else will know it.',
+  'Tell Lightbox your exam date when asked, then follow the daily plan on Home. Add it to your home screen to use it like an app.',
+];
+/** A friendly message for WhatsApp or SMS. */
+export const welcomeText = (c: Cred) =>
+  `Hi ${first(c.name)}! Your Lightbox account for FCPS-II radiology prep is ready.\n\n${location.origin}\nUsername: ${c.username}\nTemporary password: ${c.password}\n\n${FIRST_STEPS.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+export const ONBOARD_KEY = 'lb:onboard-shared';
+const markShared = () => { localStorage.setItem(ONBOARD_KEY, '1'); dispatchEvent(new Event('lb:onboard')); };
+
+/** One cut-out slip per person, in a new window that opens the print dialog. */
+export function printSlips(rows: Cred[]) {
+  const w = window.open('', '_blank', 'width=820,height=900');
+  if (!w) { toast('Allow pop-ups for this site to print slips.', 'bad'); return; }
+  const slip = (c: Cred) => `<section class="slip"><p class="k">Lightbox · FCPS-II radiology</p><h2>${esc(c.name)}</h2>
+    <dl><dt>Sign in at</dt><dd>${esc(location.origin)}</dd><dt>Username</dt><dd class="m">${esc(c.username)}</dd><dt>Temporary password</dt><dd class="m">${esc(c.password)}</dd></dl>
+    <ol>${FIRST_STEPS.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></section>`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Lightbox login slips</title><style>
+    body{font:12pt/1.4 system-ui,sans-serif;color:#000;margin:12mm}.grid{display:grid;grid-template-columns:1fr 1fr;gap:6mm}
+    .slip{border:1.5px dashed #777;border-radius:3mm;padding:5mm;break-inside:avoid}.k{margin:0;font-size:8pt;letter-spacing:.08em;text-transform:uppercase;color:#555}
+    h2{margin:1.5mm 0 3mm;font-size:14pt}dl{display:grid;grid-template-columns:auto 1fr;gap:1mm 3mm;margin:0;font-size:10pt}dt{color:#555}dd{margin:0;overflow-wrap:anywhere}
+    .m{font:600 11pt ui-monospace,monospace}ol{margin:3mm 0 0;padding-left:5mm;font-size:9pt;color:#333}li{margin:.6mm 0}
+    @media print{body{margin:8mm}}</style></head><body><div class="grid">${rows.map(slip).join('')}</div>
+    <script>window.onload=()=>{window.print()}<\/script></body></html>`);
+  w.document.close();
+  markShared();
+}
 
 /** Temporary passwords, shown once. Closing the dialog drops them from memory. */
 export function Credentials({ rows, onClose }: { rows: Cred[] | null; onClose: () => void }) {
@@ -82,6 +112,7 @@ export function Credentials({ rows, onClose }: { rows: Cred[] | null; onClose: (
   const ref = useModal(!!rows?.length);
   const [copied, setCopied] = useState<string | null>(null);
   const one = async (c: Cred) => { await copy(loginText(c), `Copied @${c.username}'s login`); setCopied(c.username); };
+  const shared = markShared;
   return (
     <dialog ref={ref} className="lb-dialog adm-dialog adm-creds" aria-labelledby={`${id}-h`} aria-describedby={`${id}-d`} onClose={() => { setCopied(null); onClose(); }}>
       {rows && rows.length > 0 && (
@@ -100,15 +131,19 @@ export function Credentials({ rows, onClose }: { rows: Cred[] | null; onClose: (
                     <div className="num text-xs text-muted">@{c.username}</div>
                   </div>
                   <code className="num cred-pw" aria-label={`Temporary password for @${c.username}`} data-secret>{c.password}</code>
-                  <button type="button" className="btn btn-sm" onClick={() => one(c)} aria-label={`Copy login details for @${c.username}`}>
+                  <button type="button" className="btn btn-sm" onClick={() => { shared(); one(c); }} aria-label={`Copy login details for @${c.username}`}>
                     {copied === c.username ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}<span className="max-sm:hidden">{copied === c.username ? 'Copied' : 'Copy'}</span>
                   </button>
+                  <a className="btn btn-sm btn-ghost !px-2" href={`https://wa.me/?text=${encodeURIComponent(welcomeText(c))}`} target="_blank" rel="noopener noreferrer" onClick={shared}
+                    aria-label={`Send @${c.username} a welcome message on WhatsApp`} title="Send on WhatsApp"><MessageCircle size={14} aria-hidden="true" /></a>
                 </li>
               ))}
             </ul>
           </div>
-          <div className="df">
-            {rows.length > 1 && <button type="button" className="btn btn-ghost mr-auto" onClick={() => copy(rows.map(loginText).join('\n\n'), `Copied ${rows.length} logins`)}><Copy size={15} aria-hidden="true" />Copy all</button>}
+          <div className="df flex-wrap">
+            <button type="button" className="btn btn-ghost" onClick={() => printSlips(rows)}><Printer size={15} aria-hidden="true" />Print slips</button>
+            <button type="button" className="btn btn-ghost mr-auto" onClick={() => { shared(); copy(rows.map(welcomeText).join('\n\n———\n\n'), rows.length > 1 ? `Copied ${rows.length} welcome messages` : 'Copied the welcome message'); }}><MessageCircle size={15} aria-hidden="true" />Copy message{rows.length > 1 ? 's' : ''}</button>
+            {rows.length > 1 && <button type="button" className="btn btn-ghost" onClick={() => { shared(); copy(rows.map(loginText).join('\n\n'), `Copied ${rows.length} logins`); }}><Copy size={15} aria-hidden="true" />Copy all</button>}
             <button type="button" className="btn btn-primary" autoFocus onClick={() => ref.current?.close()}>Done</button>
           </div>
         </>

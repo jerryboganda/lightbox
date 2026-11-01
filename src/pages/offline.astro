@@ -9,6 +9,30 @@ import Logo from '../components/Logo.astro';
       <h1 class="mt-6 text-xl font-medium">You're offline</h1>
       <p class="mt-2 text-sm text-muted">Pages you've opened before still work, and flashcard reviews are saved on this device until you reconnect.</p>
       <div class="mt-6 flex justify-center gap-2"><a href="/practice/cards" class="btn btn-primary">Review flashcards</a><button class="btn" onclick="location.reload()">Try again</button></div>
+      <div class="mt-8 text-left" data-packs hidden>
+        <h2 class="text-sm font-medium">Saved for offline</h2>
+        <ul class="mt-2 grid gap-1.5" data-packs-list></ul>
+      </div>
     </div>
   </main>
 </Base>
+
+<script is:inline>
+  // Inline on purpose: this page is precached on its own, so it cannot rely on a bundled script being cached.
+  (async () => {
+    try {
+      if (!self.caches || !(await caches.has('lb-packs'))) return;
+      const c = await caches.open('lb-packs');
+      const keys = (await c.keys()).filter((r) => new URL(r.url).pathname.startsWith('/__pack/'));
+      const packs = (await Promise.all(keys.map(async (k) => (await c.match(k)).json().catch(() => null)))).filter(Boolean);
+      if (!packs.length) return;
+      const ul = document.querySelector('[data-packs-list]');
+      for (const p of packs.sort((a, b) => a.label.localeCompare(b.label))) {
+        const li = document.createElement('li'), a = document.createElement('a');
+        a.href = '/study/' + p.system; a.className = 'panel lift block px-3 py-2 text-sm'; a.textContent = p.label;
+        li.append(a); ul.append(li);
+      }
+      document.querySelector('[data-packs]').hidden = false;
+    } catch {}
+  })();
+</script>

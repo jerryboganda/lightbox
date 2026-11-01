@@ -1,18 +1,18 @@
 // Accounts: directory with search and filters, per-person activity, and create one or several accounts.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Download, KeyRound, Search, Shield, ShieldCheck, UserCheck, UserPlus, UsersRound, UserX, X } from 'lucide-react';
+import { Check, ClipboardList, Download, KeyRound, Search, Shield, ShieldCheck, UserCheck, UserPlus, UsersRound, UserX, X } from 'lucide-react';
 import type { UserRow } from '../../../server/admin';
 import { toast } from '../../../scripts/toast';
-import { ago, api, bump, Credentials, fail, full, initials, plural, useConfirm, type Cred } from './kit';
+import { ago, api, bump, Credentials, fail, full, initials, ONBOARD_KEY, plural, useConfirm, type Cred } from './kit';
 
-export interface AdminUsersProps { users: UserRow[]; meId: number; now: number; filter?: string }
+export interface AdminUsersProps { users: UserRow[]; meId: number; now: number; filter?: string; announced?: number }
 const DAY = 86_400_000;
 const FILTERS = [['all', 'All'], ['admins', 'Admins'], ['members', 'Members'], ['awaiting', 'Awaiting first sign-in'], ['active', 'Active this week'], ['disabled', 'Disabled']] as const;
 type Filter = (typeof FILTERS)[number][0];
 const sortUsers = (a: UserRow, b: UserRow) => a.disabled - b.disabled || a.role.localeCompare(b.role) || a.username.localeCompare(b.username);
 
-export default function AdminUsers({ users: initial, meId, now, filter: f0 }: AdminUsersProps) {
+export default function AdminUsers({ users: initial, meId, now, filter: f0, announced = 0 }: AdminUsersProps) {
   const reduce = useReducedMotion();
   const [users, setUsers] = useState(initial);
   const [q, setQ] = useState('');
@@ -62,6 +62,7 @@ export default function AdminUsers({ users: initial, meId, now, filter: f0 }: Ad
 
   return (
     <div className="adm-users">
+      <Onboarding members={counts.members} awaiting={counts.awaiting} announced={announced} onAwaiting={() => { pickFilter('awaiting'); document.getElementById('dir-h')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} />
       <CreatePanel onAdded={added} />
       <section className="panel adm-dir" aria-labelledby="dir-h">
         <header className="adm-dir-h">
@@ -130,6 +131,50 @@ export default function AdminUsers({ users: initial, meId, now, filter: f0 }: Ad
       <Credentials rows={creds} onClose={() => setCreds(null)} />
       {confirmDialog}
     </div>
+  );
+}
+
+const HIDE_KEY = 'lb:onboard-hide';
+
+/** The class set-up checklist: create accounts, share logins, chase first sign-ins, welcome everyone. */
+function Onboarding({ members, awaiting, announced, onAwaiting }: { members: number; awaiting: number; announced: number; onAwaiting: () => void }) {
+  const [ready, setReady] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [shared, setShared] = useState(false);
+  useEffect(() => {
+    const read = () => { setHidden(localStorage.getItem(HIDE_KEY) === '1'); setShared(localStorage.getItem(ONBOARD_KEY) === '1'); };
+    read(); setReady(true);
+    addEventListener('focus', read);
+    addEventListener('lb:onboard', read);
+    return () => { removeEventListener('focus', read); removeEventListener('lb:onboard', read); };
+  }, []);
+  const steps = [
+    { done: members > 0, text: 'Create an account for each classmate', hint: 'Use "Several" below to paste the whole class at once.', act: <a href="#create-h" className="btn btn-sm btn-ghost">Add people</a> },
+    { done: shared, text: 'Share the logins', hint: 'From the password dialog: print cut-out slips, or send each person a WhatsApp message with the first-sign-in steps.', act: null },
+    { done: members > 0 && awaiting === 0, text: 'Chase anyone who has not signed in', hint: awaiting ? `${plural(awaiting, 'person has', 'people have')} not chosen a password yet.` : 'Everyone has signed in.', act: awaiting ? <button type="button" className="btn btn-sm btn-ghost" onClick={onAwaiting}>Show {awaiting}</button> : null },
+    { done: announced > 0, text: 'Post a welcome announcement', hint: 'It shows on everyone’s Home. Mention the weekly challenge in Class.', act: <a href="/admin?tab=announcements" className="btn btn-sm btn-ghost">Write one</a> },
+  ];
+  const left = steps.filter((s) => !s.done).length;
+  if (!ready || hidden || !left) return null;
+  return (
+    <section className="panel onboard" aria-labelledby="ob-h">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="adm-ico"><ClipboardList size={18} aria-hidden="true" /></span>
+          <div className="min-w-0"><h2 id="ob-h" className="font-medium">Set up your class</h2><p className="text-xs text-muted">{plural(left, 'step')} left</p></div>
+        </div>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { localStorage.setItem(HIDE_KEY, '1'); setHidden(true); }}>Hide</button>
+      </div>
+      <ol>
+        {steps.map((s, i) => (
+          <li key={s.text} className={s.done ? 'done' : undefined}>
+            <span className="ob-n" aria-hidden="true">{s.done ? <Check size={13} /> : i + 1}</span>
+            <div className="min-w-0"><p className="ob-t font-medium">{s.text}<span className="sr-only">{s.done ? ' (done)' : ' (to do)'}</span></p>{!s.done && <p className="text-xs text-muted">{s.hint}</p>}</div>
+            {!s.done ? s.act : <span />}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
